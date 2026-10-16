@@ -6,6 +6,7 @@
   'use strict';
 
   const PENALIDADE_MAX = 4; // % — penalidade permitida: 0 a 4
+  const IMPOSTO_PCT = 1.5;  // % — impostos descontados do valor bruto do parceiro
 
   /** Arredonda sem os erros de ponto flutuante (ex.: 2.675 -> 2.68). */
   function arred(x, casas) {
@@ -47,6 +48,7 @@
    * e = { peso_total_kg, participacao_pct, penalidade_pct, preco_base, preco_ajustado,
    *       tem_ie ('SIM'|'NAO'|'OUTRO'), desconto_modo ('NENHUM'|'VALOR'|'MAXIMO'), desconto_informado }
    * Pesos com 1 casa decimal, valores com 2.
+   * Impostos (IMPOSTO_PCT) saem do valor bruto do parceiro, antes do desconto em R$.
    */
   function calcular(e) {
     const r = {
@@ -57,6 +59,7 @@
       peso_nome_outro: 0,
       peso_proprietario: 0,
       valor_bruto_parceiro: 0,
+      valor_imposto: 0,
       desconto_maximo: 0,
       desconto_aplicado: 0,
       valor_parceiro: 0,
@@ -92,7 +95,9 @@
     r.peso_proprietario = arred(peso - parte, 1);
 
     r.valor_bruto_parceiro = arred(parte * base, 2);
-    r.desconto_maximo = r.valor_bruto_parceiro;
+    r.valor_imposto = arred(r.valor_bruto_parceiro * IMPOSTO_PCT / 100, 2);
+    // desconto máximo: o que sobra depois dos impostos (o parceiro fica com R$ 0,00)
+    r.desconto_maximo = arred(r.valor_bruto_parceiro - r.valor_imposto, 2);
 
     let desc = 0;
     if (e.desconto_modo === 'MAXIMO') desc = r.desconto_maximo;
@@ -102,13 +107,14 @@
       r.erros.push('O desconto é maior que o máximo possível.');
     }
     r.desconto_aplicado = Math.min(desc, r.desconto_maximo);
-    r.valor_parceiro = arred(r.valor_bruto_parceiro - r.desconto_aplicado, 2);
+    r.valor_parceiro = arred(r.valor_bruto_parceiro - r.valor_imposto - r.desconto_aplicado, 2);
     // = peso_proprietario × preco_base + desconto, calculado pelo total para fechar no centavo
-    r.valor_proprietario = arred(arred(peso * base, 2) - r.valor_parceiro, 2);
+    // (valor_parceiro + valor_proprietario + valor_imposto = peso_total_kg × preco_base)
+    r.valor_proprietario = arred(arred(peso * base, 2) - r.valor_parceiro - r.valor_imposto, 2);
     return r;
   }
 
-  const api = { PENALIDADE_MAX: PENALIDADE_MAX, arred: arred, lerNumero: lerNumero, calcular: calcular };
+  const api = { PENALIDADE_MAX: PENALIDADE_MAX, IMPOSTO_PCT: IMPOSTO_PCT, arred: arred, lerNumero: lerNumero, calcular: calcular };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.Calc = api;
 })(typeof self !== 'undefined' ? self : this);

@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const VERSAO_APP = '1.2.0';
+const VERSAO_APP = '1.3.0';
 const Calc = window.Calc;
 
 /* =========================================================================
@@ -64,6 +64,7 @@ const S = {
   sincronizando: false,
   erroEnvio: null,     // 'rede' | mensagem do servidor | null
   armazenamentoPersistente: null,
+  atualizacaoDisponivel: false,
 };
 
 async function salvarEstado() {
@@ -205,62 +206,90 @@ function pendencias() {
 }
 
 /* =========================================================================
- * Faixas de status (sincronização e envio)
+ * Situação da sincronização: ícone no cabeçalho + faixa temporária (só na tela principal)
  * ========================================================================= */
-function renderFaixas() {
-  const fs = $('#faixa-sync');
+function estadoSync() {
   const hoje = hojeISO();
-  let classe, html;
-  if (S.sincronizando) {
-    classe = 'faixa-azul'; html = '⟳ Sincronizando com a planilha...';
-  } else if (!S.config || !S.config.url) {
-    classe = 'faixa-vermelha';
-    html = S.tela === 'config' ? 'App não configurado. Preencha os campos abaixo.' : 'App não configurado. Toque em ⚙ para configurar.';
-  } else if (!S.dados) {
-    classe = 'faixa-vermelha';
-    html = '✖ Nenhum dado sincronizado.<small>Conecte-se à internet e toque em Sincronizar antes de ir para o campo.</small>';
-  } else if (!S.dados.entregas.length) {
-    classe = 'faixa-vermelha';
-    html = '✖ Nenhuma entrega ABERTA na planilha.<small>Sincronizado em ' + fmtDataHora(S.dados.sincronizado_em) + '</small>';
-  } else if (S.data === hoje) {
-    classe = 'faixa-verde';
-    html = '✔ Pronto para a entrega de HOJE (' + fmtData(S.data) + ')' +
-      '<small>Sincronizado em ' + fmtDataHora(S.dados.sincronizado_em) + '</small>';
-  } else {
-    classe = 'faixa-amarela';
-    html = '⚠ Dados da entrega de ' + fmtData(S.data) + ' — hoje é ' + fmtData(hoje) +
-      '<small>Se a entrega é hoje, sincronize com internet. Última sincronização: ' +
-      fmtDataHora(S.dados.sincronizado_em) + '</small>';
-  }
-  fs.className = 'faixa ' + classe;
-  fs.innerHTML = '<div>' + html + '</div>';
-  $('#btn-sync').disabled = S.sincronizando;
-
-  const fe = $('#faixa-envio');
   const pend = pendencias();
-  const total = pend.lancamentos + pend.inativacoes;
-  if (S.enviando) {
-    fe.className = 'faixa faixa-azul';
-    fe.innerHTML = '<div>⟳ Enviando para a planilha...</div>';
-  } else if (pend.erros.length) {
-    fe.className = 'faixa faixa-vermelha';
-    fe.innerHTML = '<div>⚠ ' + pend.erros.length + ' lançamento(s) recusado(s) pela planilha' +
-      '<small>' + esc(pend.erros[0]._erro) + '</small></div>' +
-      '<button class="btn btn-pequeno" data-acao="enviar-agora">Tentar de novo</button>';
-  } else if (total > 0) {
-    let detalhe = 'Será enviado automaticamente quando houver internet.';
-    if (S.erroEnvio && S.erroEnvio !== 'rede') detalhe = 'Erro: ' + S.erroEnvio;
-    fe.className = 'faixa faixa-amarela';
-    fe.innerHTML = '<div>⏳ ' + total + (total === 1 ? ' alteração aguardando envio' : ' alterações aguardando envio') +
-      '<small>' + esc(detalhe) + '</small></div>' +
-      '<button class="btn btn-pequeno" data-acao="enviar-agora">Enviar agora</button>';
-  } else if (S.ultimoEnvio && Object.keys(S.lanc).length) {
-    fe.className = 'faixa faixa-cinza';
-    fe.innerHTML = '<div>✔ Tudo enviado para a planilha<small>Último envio: ' + fmtDataHora(S.ultimoEnvio) + '</small></div>';
+  const totalPend = pend.lancamentos + pend.inativacoes;
+  let sync, nivelSync = 0; // 0 ok · 1 atenção · 2 problema
+  if (S.sincronizando) {
+    sync = '⟳ Sincronizando com a planilha...';
+  } else if (!S.config || !S.config.url) {
+    sync = 'App não configurado. Toque em Configurações, no fim da página.'; nivelSync = 2;
+  } else if (!S.dados) {
+    sync = '✖ Nenhum dado sincronizado. Com internet, toque em Sincronizar antes de ir para o campo.'; nivelSync = 2;
+  } else if (!S.dados.entregas.length) {
+    sync = '✖ Nenhuma entrega ABERTA na planilha (sincronizado em ' + fmtDataHora(S.dados.sincronizado_em) + ').'; nivelSync = 2;
+  } else if (S.data === hoje) {
+    sync = '✔ Pronto para a entrega de HOJE (' + fmtData(S.data) + ') · sincronizado em ' + fmtDataHora(S.dados.sincronizado_em);
   } else {
-    fe.className = 'faixa';
-    fe.innerHTML = '';
+    sync = '⚠ Dados da entrega de ' + fmtData(S.data) + ' — hoje é ' + fmtData(hoje) +
+      '. Se a entrega é hoje, sincronize com internet.';
+    nivelSync = 1;
   }
+  let envio = '', nivelEnvio = 0;
+  if (S.enviando) {
+    envio = '⟳ Enviando para a planilha...';
+  } else if (pend.erros.length) {
+    envio = '⚠ ' + pend.erros.length + ' lançamento(s) recusado(s) pela planilha: ' + pend.erros[0]._erro;
+    nivelEnvio = 2;
+  } else if (totalPend) {
+    envio = '⏳ ' + totalPend + (totalPend === 1 ? ' alteração aguardando envio. ' : ' alterações aguardando envio. ') +
+      (S.erroEnvio && S.erroEnvio !== 'rede' ? 'Erro: ' + S.erroEnvio : 'Serão enviadas quando houver internet.');
+    nivelEnvio = 1;
+  } else if (S.ultimoEnvio && Object.keys(S.lanc).length) {
+    envio = '✔ Tudo enviado para a planilha (último envio ' + fmtDataHora(S.ultimoEnvio) + ').';
+  }
+  return {
+    sync: sync, envio: envio, nivelSync: nivelSync, nivel: Math.max(nivelSync, nivelEnvio),
+    totalPend: totalPend, erros: pend.erros.length,
+  };
+}
+
+/** Atualiza o ícone de situação no cabeçalho (e o que aparece só na tela principal). */
+function renderFaixas() {
+  const e = estadoSync();
+  const el = $('#status-sync');
+  let estado, txt, dica;
+  if (S.sincronizando || S.enviando) { estado = 'ocupado'; txt = '⟳'; dica = 'Sincronizando'; }
+  else if (e.erros || e.nivelSync === 2) { estado = 'erro'; txt = '⚠'; dica = 'Problema na sincronização'; }
+  else if (e.totalPend) { estado = 'pendente'; txt = '⏳ ' + e.totalPend; dica = 'Aguardando envio'; }
+  else if (e.nivelSync === 1) { estado = 'aviso'; txt = '⚠'; dica = 'Dados de outra data'; }
+  else { estado = 'ok'; txt = '✔'; dica = 'Tudo sincronizado'; }
+  el.dataset.estado = estado;
+  el.textContent = txt;
+  el.setAttribute('aria-label', dica);
+  const naLista = S.tela === 'lista';
+  el.hidden = !naLista;
+  $('#btn-sync').hidden = !naLista;
+  $('#btn-sync').disabled = S.sincronizando;
+  $('#faixa-atualizacao').hidden = !(naLista && S.atualizacaoDisponivel);
+  if (!naLista) esconderStatus();
+  else if (!$('#faixa-status').hidden) preencherFaixaStatus(e); // atualiza o texto se estiver aberta
+}
+
+let temporizadorFaixa = null;
+function preencherFaixaStatus(e) {
+  const f = $('#faixa-status');
+  const classe = (S.sincronizando || S.enviando) ? 'faixa-azul'
+    : e.nivel === 2 ? 'faixa-vermelha' : e.nivel === 1 ? 'faixa-amarela' : 'faixa-verde';
+  f.className = 'faixa ' + classe;
+  f.innerHTML = '<div>' + esc(e.sync) + (e.envio ? '<small>' + esc(e.envio) + '</small>' : '') + '</div>';
+}
+/** Mostra a situação completa por alguns segundos (só na tela principal). */
+function mostrarStatus(ms) {
+  if (S.tela !== 'lista') return;
+  const e = estadoSync();
+  preencherFaixaStatus(e);
+  $('#faixa-status').hidden = false;
+  clearTimeout(temporizadorFaixa);
+  temporizadorFaixa = setTimeout(esconderStatus, ms || (e.nivel ? 10000 : 6000));
+}
+function esconderStatus() {
+  clearTimeout(temporizadorFaixa);
+  const f = $('#faixa-status');
+  if (f) f.hidden = true;
 }
 
 /* =========================================================================
@@ -274,15 +303,18 @@ function render() {
 }
 
 /* ---------------------------- Lista ---------------------------- */
+const RODAPE = '<footer class="rodape"><button class="btn btn-rodape" data-acao="abrir-config">⚙ Configurações</button>' +
+  '<span>Versão ' + VERSAO_APP + '</span></footer>';
+
 function renderLista() {
   S.tela = 'lista';
   const tela = $('#tela');
   if (!S.dados || !S.dados.entregas.length) {
     tela.innerHTML = '<div class="vazio">' +
       (!S.config || !S.config.url
-        ? 'Toque em ⚙ para configurar o endereço da planilha.'
+        ? 'Toque em <b>Configurações</b>, aqui embaixo, para informar o endereço da planilha.'
         : 'Nenhuma entrega disponível.<br>Com internet, toque em <b>⟳ Sincronizar</b>.') +
-      '</div>';
+      '</div>' + RODAPE;
     return;
   }
   const ent = entregaAtual();
@@ -304,8 +336,7 @@ function renderLista() {
       }).join('') + '</div>';
   }
   html += '<h1 class="titulo-tela">Entrega de ' + fmtData(ent.data_entrega) +
-    ' <small style="font-weight:500;color:var(--texto-suave);font-size:.8em">· preço base ' + fmtR(ent.preco_base) +
-    (ent.preco_ajustado !== ent.preco_base ? ' · ajustado ' + fmtR(ent.preco_ajustado) : '') + '</small></h1>';
+    ' <small style="font-weight:500;color:var(--texto-suave);font-size:.8em">· preço ' + fmtR(ent.preco_ajustado) + '</small></h1>';
   if (ent.observacoes) html += '<div class="obs-fixa">' + esc(ent.observacoes) + '</div>';
   html += '<div class="resumo-dia">' +
     '<div><b>' + pesados + '</b><span>Pesados</span></div>' +
@@ -334,7 +365,7 @@ function renderLista() {
     '<button class="btn' + (S.filtro === 'todos' ? ' ativo' : '') + '" data-acao="filtro" data-valor="todos">Todos</button>' +
     '<button class="btn' + (S.filtro === 'faltam' ? ' ativo' : '') + '" data-acao="filtro" data-valor="faltam">Faltam</button>' +
     '</div></div>';
-  html += '<div id="lista" class="lista"></div>';
+  html += '<div id="lista" class="lista"></div>' + RODAPE;
   tela.innerHTML = html;
   renderGradeLista();
 }
@@ -378,8 +409,16 @@ function renderGradeLista() {
           (faltamFaz === 1 ? 'Não entregou' : 'Nenhum entregou') + '</button>'
         : '') +
       '</div></div>' +
-      g.parceiros.map(cartaoParceiro).join('');
+      g.parceiros.slice().sort(function (a, b) { return rankSituacao(a) - rankSituacao(b); })
+        .map(cartaoParceiro).join('');
   }).join('');
+}
+
+/** Ordem dentro da fazenda: falta lançar, entregou, não entregou (a sort mantém a "ordem" em cada grupo). */
+function rankSituacao(p) {
+  const r = registroDe(p.id_parceiro);
+  if (!r) return 0;
+  return r.situacao === 'ENTREGOU' ? 1 : 2;
 }
 
 function cartaoParceiro(p) {
@@ -387,16 +426,13 @@ function cartaoParceiro(p) {
   let classe = 'a-pesar', estado = '<b>A pesar</b>';
   let motorista = '';
   if (r) {
-    const envio = r._erro ? '<small class="envio-erro">⚠ recusado</small>'
-      : r._pendente ? '<small class="envio-pendente">⏳ não enviado</small>'
-        : '<small class="envio-ok">✔ enviado</small>';
     if (r.situacao === 'ENTREGOU') {
       classe = 'pesado';
-      estado = '<b>' + fmtKg(r.peso_total_kg) + '</b><small>Recebe ' + fmtR(r.valor_parceiro) + '</small>' + envio;
+      estado = '<b>' + fmtKg(r.peso_total_kg) + '</b>';
       if (r.motorista) motorista = '<div class="motorista-cartao">🚚 ' + esc(r.motorista) + '</div>';
     } else {
       classe = 'nao-entregou';
-      estado = '<b>Não entregou</b>' + envio;
+      estado = '<b>Não entregou</b>';
     }
   }
   const sub = p.apelido && p.nome !== p.apelido ? p.nome : '';
@@ -592,7 +628,8 @@ function atualizarResultado() {
         : fmtPct(p.participacao_pct)) +
       linhaRes('Parte do parceiro <small>(nota em nome do ' + nomeNota + ')</small>', fmtKg(r.peso_parte_parceiro)) +
       linhaRes('Parte do proprietário', fmtKg(r.peso_proprietario)) +
-      linhaRes('Valor do parceiro (sem desconto)', fmtR(r.valor_bruto_parceiro)) +
+      linhaRes('Valor do parceiro (sem descontos)', fmtR(r.valor_bruto_parceiro)) +
+      linhaRes('Impostos (' + fmtPct(Calc.IMPOSTO_PCT) + ')', '− ' + fmtR(r.valor_imposto), 'desconto') +
       linhaRes('Desconto' + (S.form.modo === 'MAXIMO' ? ' (máximo)' : ''), '− ' + fmtR(r.desconto_aplicado), 'desconto') +
       '<div class="res-linha"><span style="color:var(--texto-suave)">Desconto máximo possível</span><span style="font-weight:600;color:var(--texto-suave)">' + fmtR(r.desconto_maximo) + '</span></div>' +
       '<div class="res-final"><div class="rot">PARCEIRO RECEBE</div><div class="val">' + fmtR(r.valor_parceiro) + '</div>' +
@@ -630,6 +667,8 @@ function montarRegistro(p, ent, situacao, r, extra) {
     peso_proprietario: r.peso_proprietario,
     valor_parceiro: r.valor_parceiro,
     valor_proprietario: r.valor_proprietario,
+    imposto_pct: situacao === 'ENTREGOU' ? Calc.IMPOSTO_PCT : 0,
+    valor_imposto: r.valor_imposto,
     motorista: extra.motorista || '',
     observacoes: extra.observacoes !== undefined ? extra.observacoes : ((S.form && S.form.obs) || '').trim(),
     atualizado_em: new Date().toISOString(),
@@ -688,9 +727,6 @@ async function marcarNaoEntregou() {
   const p = parceiroPorId(S.parceiroId);
   const ent = entregaAtual();
   if (!p || !ent) return;
-  const ok = await confirmar('Marcar ' + nomeExibicao(p) + ' como NÃO ENTREGOU em ' + fmtData(ent.data_entrega) + '?',
-    'Não entregou', 'btn-laranja');
-  if (!ok) return;
   const zeros = Calc.calcular({}); // todos os valores zerados
   const reg = montarRegistro(p, ent, 'NAO_ENTREGOU', zeros, {
     peso_total_kg: 0, penalidade_pct: 0, desconto_modo: 'NENHUM', desconto_informado: 0,
@@ -707,13 +743,11 @@ async function marcarFazendaNaoEntregou(nomeFazenda) {
     return semAcento(normalizarNome(p.fazenda) || 'Sem fazenda') === alvo && !registroDe(p.id_parceiro);
   });
   if (!restantes.length) return;
-  const nomes = restantes.map(nomeExibicao);
-  const lista = nomes.length > 8 ? nomes.slice(0, 8).join(', ') + ' e mais ' + (nomes.length - 8) : nomes.join(', ');
   const ok = await confirmar(
     (restantes.length === 1
       ? 'Marcar o parceiro que falta de ' + nomeFazenda + ' como NÃO ENTREGOU?'
       : 'Marcar os ' + restantes.length + ' parceiros que faltam de ' + nomeFazenda + ' como NÃO ENTREGOU?') +
-    '\n\n' + lista + '\n\nQuem já foi lançado não é alterado.',
+    '\n\nQuem já foi lançado não é alterado.',
     'Não entregou', 'btn-laranja');
   if (!ok) return;
   const zeros = Calc.calcular({});
@@ -896,6 +930,21 @@ async function chamar(payload, cfg, tempoMs) {
       signal: ctrl.signal,
     });
   } catch (e) {
+    clearTimeout(t);
+    // O navegador não diz se foi falta de internet ou bloqueio do Google (permissão/CORS).
+    // Testa se o endereço responde de alguma forma: se responder, o problema é a implantação.
+    let alcancavel = false;
+    try {
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(function () { ctrl2.abort(); }, 15000);
+      await fetch(cfg.url + '?acao=ping', { mode: 'no-cors', cache: 'no-store', signal: ctrl2.signal });
+      clearTimeout(t2);
+      alcancavel = true;
+    } catch (e2) { /* sem rede de fato */ }
+    if (alcancavel) {
+      throw new Error('A planilha recusou o acesso. No Apps Script, confira a implantação: ' +
+        'Executar como "Eu" e Quem pode acessar "Qualquer pessoa" (depois implante uma Nova versão).');
+    }
     throw new ErroRede('Sem conexão com a internet.');
   } finally {
     clearTimeout(t);
@@ -944,19 +993,13 @@ async function enviarPendentes(op) {
     S.ultimoEnvio = agora;
     S.erroEnvio = null;
     await salvarEstado();
-    if (op.manual && !op.silencioso) {
-      aviso(resp.rejeitados && resp.rejeitados.length
-        ? resp.rejeitados.length + ' recusado(s): ' + resp.rejeitados[0].motivo
-        : 'Enviado para a planilha ✔', 4000);
-    }
   } catch (e) {
     S.erroEnvio = e instanceof ErroRede ? 'rede' : e.message;
-    if (op.manual && !op.silencioso) aviso(e instanceof ErroRede ? 'Sem internet agora. Fica guardado no tablet.' : e.message, 4500);
     if (op.lancarErro) throw e;
   } finally {
     S.enviando = false;
     renderFaixas();
-    if (S.tela === 'lista') renderGradeLista();
+    if (op.manual && !op.silencioso) mostrarStatus();
   }
 }
 
@@ -965,14 +1008,20 @@ async function sincronizar() {
   if (!S.config || !S.config.url) { abrirConfig(); aviso('Configure o app primeiro.'); return; }
   S.sincronizando = true;
   renderFaixas();
+  mostrarStatus(60000);
   try {
     await enviarPendentes({ manual: true, silencioso: true, lancarErro: true });
     const d = await chamar({ acao: 'baixar' });
     aplicarDownload(d);
     await salvarEstado();
-    aviso('Sincronizado ✔' + (d.avisos && d.avisos.length ? ' — há avisos em ⚙' : ''), 3500);
+    S.sincronizando = false;
+    renderFaixas();
+    mostrarStatus();
+    if (d.avisos && d.avisos.length) aviso('Sincronizado, mas a planilha tem avisos: veja em Configurações.', 5000);
   } catch (e) {
-    aviso(e instanceof ErroRede ? 'Sem internet. Não foi possível sincronizar.' : e.message, 5000);
+    S.sincronizando = false;
+    esconderStatus();
+    aviso(e instanceof ErroRede ? 'Sem internet. Não foi possível sincronizar.' : e.message, e instanceof ErroRede ? 5000 : 9000);
   } finally {
     S.sincronizando = false;
     renderFaixas();
@@ -1046,7 +1095,11 @@ const ACOES = {
   'nao-entregou': marcarNaoEntregou,
   'nao-entregou-fazenda': function (el) { marcarFazendaNaoEntregou(el.dataset.fazenda); },
   'remover-parceiro': removerParceiro,
-  'enviar-agora': function () { enviarPendentes({ manual: true }); },
+  'status': function () {
+    mostrarStatus();
+    if (estadoSync().totalPend || estadoSync().erros) enviarPendentes({ manual: true });
+  },
+  'fechar-status': esconderStatus,
   'salvar-config': salvarConfig,
   'testar-conexao': testarConexao,
   'apagar-dados': apagarDados,
@@ -1115,7 +1168,7 @@ function registrarSW() {
   const tinhaControlador = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js').then(function (reg) {
     // só avisa de atualização se o app já estava instalado (não na primeira abertura)
-    const mostrar = function () { if (tinhaControlador) $('#faixa-atualizacao').hidden = false; };
+    const mostrar = function () { if (tinhaControlador) { S.atualizacaoDisponivel = true; renderFaixas(); } };
     if (reg.waiting && navigator.serviceWorker.controller) mostrar();
     reg.addEventListener('updatefound', function () {
       const w = reg.installing;
@@ -1165,6 +1218,7 @@ async function iniciar() {
     history.pushState({ tela: 'config' }, '');
   }
   render();
+  mostrarStatus();
 
   setInterval(function () { enviarPendentes(); }, 2 * 60 * 1000);
   setInterval(renderFaixas, 60 * 1000); // atualiza "hoje" na virada do dia

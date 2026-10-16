@@ -15,12 +15,11 @@
   <header class="topo">
     <div class="topo-titulo">Pesagem</div>
     <div class="topo-acoes">
+      <button class="status-sync" id="status-sync" data-acao="status" data-estado="ok" hidden></button>
       <button class="btn btn-topo" data-acao="sincronizar" id="btn-sync">⟳ Sincronizar</button>
-      <button class="btn btn-topo btn-icone" data-acao="abrir-config" aria-label="Configurações">⚙</button>
     </div>
   </header>
-  <div id="faixa-sync" class="faixa"></div>
-  <div id="faixa-envio" class="faixa faixa-envio"></div>
+  <div id="faixa-status" class="faixa" data-acao="fechar-status" hidden></div>
   <div id="faixa-atualizacao" class="faixa faixa-azul" hidden>
     Nova versão do app disponível.
     <button class="btn btn-pequeno" data-acao="atualizar-app">Atualizar agora</button>
