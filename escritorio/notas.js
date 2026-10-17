@@ -277,10 +277,46 @@
     return L.join('\n');
   }
 
+  /** Descontos (R$) da data: parceiros que entregaram com desconto aplicado, em ordem alfabética. */
+  function listaDescontos(lancamentos, parceiros) {
+    const porId = {};
+    (parceiros || []).forEach(function (p) { porId[p.id_parceiro] = p; });
+    const itens = lancamentos
+      .filter(function (l) { return l.situacao === 'ENTREGOU' && num(l.desconto_aplicado) > 0; })
+      .map(function (l) {
+        const p = porId[l.id_parceiro] || {};
+        return {
+          id_parceiro: l.id_parceiro,
+          nome: normalizarNome(p.nome || l.nome) || l.id_parceiro,
+          apelido: normalizarNome(p.apelido || l.apelido),
+          fazenda: normalizarNome(l.fazenda || p.fazenda),
+          valor: arred(num(l.desconto_aplicado), 2),
+          maximo: l.desconto_modo === 'MAXIMO',
+        };
+      })
+      .sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR'); });
+    return { itens: itens, total: arred(itens.reduce(function (s, x) { return s + x.valor; }, 0), 2) };
+  }
+  function rotuloDesconto(x) {
+    return x.nome + (x.apelido && chaveNome(x.apelido) !== chaveNome(x.nome) ? ' (' + x.apelido + ')' : '');
+  }
+
+  /** Texto dos descontos para o WhatsApp. */
+  function textoDescontos(entrega, lista) {
+    const L = ['*DESCONTOS DOS PARCEIROS – ' + fmtData(entrega.data_entrega) + '*', ''];
+    lista.itens.forEach(function (x) {
+      L.push('• ' + rotuloDesconto(x) + (x.fazenda ? ' – ' + x.fazenda : '') + ': *' + fmtR(x.valor) + '*');
+    });
+    L.push('');
+    L.push('*Total: ' + fmtR(lista.total) + '*' + ' (' + lista.itens.length + (lista.itens.length === 1 ? ' parceiro)' : ' parceiros)'));
+    return L.join('\n');
+  }
+
   const api = {
     ALIQUOTA_ICMS: ALIQUOTA_ICMS, arred: arred, semAcento: semAcento, normalizarNome: normalizarNome,
     fmtNum: fmtNum, fmtKg: fmtKg, fmtR: fmtR, fmtPreco: fmtPreco, fmtData: fmtData,
     acharParceiroDaNota: acharParceiroDaNota, montarNotas: montarNotas, resumir: resumir, textoWhatsApp: textoWhatsApp,
+    listaDescontos: listaDescontos, rotuloDesconto: rotuloDesconto, textoDescontos: textoDescontos,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.Notas = api;

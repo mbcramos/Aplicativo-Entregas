@@ -143,7 +143,8 @@ function renderTudo() {
   main.innerHTML =
     htmlEntrega(ent) +
     htmlIndicadores(r, ent) +
-    '<div class="grade-2" style="margin-top:16px">' + htmlFazendas(r) + htmlTotais(r) + '</div>' +
+    '<div class="grade-2" style="margin-top:16px">' + htmlFazendas(r) +
+    '<div class="pilha">' + htmlTotais(r) + htmlDescontos() + '</div></div>' +
     htmlCaminhoes(r, ent);
 }
 
@@ -215,6 +216,29 @@ function htmlFazendas(r) {
     '<tfoot><tr><td colspan="2">Total</td><td class="num">' + t.parceiros + '</td><td class="num">' + t.entregaram + '</td>' +
     '<td class="num">' + t.nao_entregaram + '</td><td class="num">' + t.faltam + '</td><td class="num">' + kg(t.peso_total) + '</td></tr></tfoot>' +
     '</table></div></div>';
+}
+
+function htmlDescontos() {
+  const d = N.listaDescontos(S.dados.lancamentos, S.dados.parceiros);
+  S.descontos = d;
+  const vazio = !d.itens.length;
+  const bloqueio = vazio ? ' disabled title="Nenhum desconto nesta data"' : '';
+  return '<div class="cartao descontos"><div class="cartao-cab"><h3>Descontos do dia</h3>' +
+    '<span class="chip"><b>' + R$(d.total) + '</b></span></div>' +
+    '<div class="cartao-corpo">' +
+    (vazio ? '<div class="zero">Nenhum desconto nesta data.</div>'
+      : '<div class="lista-descontos">' + d.itens.map(function (x) {
+        return '<div class="nota-linha"><span>' + esc(N.rotuloDesconto(x)) +
+          '<small>' + esc(x.fazenda) + (x.maximo ? ' · desconto máximo' : '') + '</small></span>' +
+          '<span class="num">' + R$(x.valor) + '</span></div>';
+      }).join('') + '</div>' +
+      '<div class="nota-sub"><span>' + d.itens.length + (d.itens.length === 1 ? ' parceiro' : ' parceiros') + '</span>' +
+      '<span class="num"><b>' + R$(d.total) + '</b></span></div>') +
+    '<div class="acoes-desc">' +
+    '<button class="btn btn-sec" data-acao="desc-texto"' + bloqueio + '>📋 Copiar texto</button>' +
+    '<button class="btn btn-pri" data-acao="desc-imagem"' + bloqueio + '>🖼 Copiar imagem</button>' +
+    '<button class="btn btn-sec" data-acao="desc-baixar"' + bloqueio + '>⬇ PNG</button>' +
+    '</div></div></div>';
 }
 
 function htmlTotais(r) {
@@ -436,6 +460,63 @@ function desenharImagem(ent, c) {
   return cv;
 }
 
+/** Imagem da lista de descontos: Parceiro | Fazenda | Desconto, com total. */
+function desenharDescontos(ent, d) {
+  const ESC = 2, M = 28, PAD = 14, GAP = 36, LIN = 34, CAB_TAB = 30;
+  const fonte = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+  const med = document.createElement('canvas').getContext('2d');
+  function larg(t, tam, peso) { med.font = (peso || 400) + ' ' + tam + 'px ' + fonte; return med.measureText(String(t)).width; }
+  let wNome = larg('PARCEIRO', 12, 800), wFaz = larg('FAZENDA', 12, 800), wVal = larg(R$(d.total), 17, 800);
+  d.itens.forEach(function (x) {
+    wNome = Math.max(wNome, larg(N.rotuloDesconto(x), 16, 600));
+    wFaz = Math.max(wFaz, larg(x.fazenda, 15, 500));
+    wVal = Math.max(wVal, larg(R$(x.valor), 16, 800));
+  });
+  wNome = Math.min(wNome, 460); wFaz = Math.min(wFaz, 300);
+  const W = Math.max(640, Math.ceil(2 * M + 2 * PAD + wNome + wFaz + wVal + 2 * GAP));
+  const xNome = M + PAD, xFaz = W - M - PAD - wVal - GAP - wFaz, xVal = W - M - PAD;
+  const h = 96 + 16 + CAB_TAB + d.itens.length * LIN + 16 + 44 + M;
+
+  const cv = document.createElement('canvas');
+  cv.width = W * ESC; cv.height = h * ESC;
+  const g = cv.getContext('2d');
+  g.scale(ESC, ESC);
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, h);
+  function txt(t, x, y, tam, peso, cor, alin) {
+    g.font = (peso || 400) + ' ' + tam + 'px ' + fonte; g.fillStyle = cor || '#1b1d1a';
+    g.textAlign = alin || 'left'; g.textBaseline = 'middle'; g.fillText(t, x, y);
+  }
+  function cortar(t, l, tam, peso) {
+    g.font = (peso || 400) + ' ' + tam + 'px ' + fonte;
+    if (g.measureText(t).width <= l + 0.5) return t;
+    while (t.length > 1 && g.measureText(t + '…').width > l) t = t.slice(0, -1);
+    return t + '…';
+  }
+  g.fillStyle = '#1f6b3a'; g.fillRect(0, 0, W, 96);
+  txt('DESCONTOS – ' + dataBR(ent.data_entrega), M, 38, 26, 800, '#ffffff');
+  txt('Descontos dos parceiros (R$)', M, 72, 18, 600, '#e6f2ea');
+  txt(d.itens.length + (d.itens.length === 1 ? ' parceiro' : ' parceiros'), W - M, 72, 16, 600, '#e6f2ea', 'right');
+  let y = 96 + 16;
+  g.fillStyle = '#eef3ef'; g.fillRect(M, y, W - 2 * M, CAB_TAB);
+  txt('PARCEIRO', xNome, y + CAB_TAB / 2, 12, 800, '#5b6157');
+  txt('FAZENDA', xFaz, y + CAB_TAB / 2, 12, 800, '#5b6157');
+  txt('DESCONTO', xVal, y + CAB_TAB / 2, 12, 800, '#5b6157', 'right');
+  y += CAB_TAB;
+  d.itens.forEach(function (x, i) {
+    if (i % 2 === 1) { g.fillStyle = '#fafbf8'; g.fillRect(M, y, W - 2 * M, LIN); }
+    txt(cortar(N.rotuloDesconto(x), wNome, 16, 600), xNome, y + LIN / 2, 16, 600);
+    txt(cortar(x.fazenda, wFaz, 15, 500), xFaz, y + LIN / 2, 15, 500);
+    txt(R$(x.valor), xVal, y + LIN / 2, 16, 800, '#1b1d1a', 'right');
+    g.fillStyle = '#e4e6df'; g.fillRect(M, y + LIN - 1, W - 2 * M, 1);
+    y += LIN;
+  });
+  y += 16;
+  g.fillStyle = '#1f6b3a'; g.fillRect(M, y, W - 2 * M, 44);
+  txt('Total de descontos', M + PAD, y + 22, 17, 700, '#ffffff');
+  txt(R$(d.total), W - M - PAD, y + 22, 20, 800, '#ffffff', 'right');
+  return cv;
+}
+
 function nomeArquivo(ent, c) { return 'notas-' + ent.data_entrega + '-' + slug(c.motorista) + '.png'; }
 
 function baixarCanvas(cv, nome) {
@@ -448,14 +529,17 @@ function baixarCanvas(cv, nome) {
 }
 
 async function copiarImagem(ent, c) {
-  const cv = desenharImagem(ent, c);
+  await copiarCanvas(desenharImagem(ent, c), nomeArquivo(ent, c));
+}
+
+async function copiarCanvas(cv, nome) {
   try {
     if (!window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) throw new Error('sem suporte');
     const blob = new Promise(function (ok) { cv.toBlob(ok, 'image/png'); });
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     toast('Imagem copiada ✔ Cole no WhatsApp com Ctrl+V');
   } catch (e) {
-    baixarCanvas(cv, nomeArquivo(ent, c));
+    baixarCanvas(cv, nome);
     toast('Este navegador não deixou copiar a imagem; ela foi baixada como arquivo.', true, 6000);
   }
 }
@@ -519,6 +603,18 @@ const ACOES = {
     toast(ok ? 'Texto copiado ✔ Cole no WhatsApp com Ctrl+V' : 'Não foi possível copiar.', !ok);
   },
   'copiar-imagem': function (el) { copiarImagem(entregaAtual(), caminhaoDoBotao(el)); },
+  'desc-texto': async function () {
+    const ok = await copiarTexto(N.textoDescontos(entregaAtual(), S.descontos));
+    toast(ok ? 'Descontos copiados ✔ Cole no WhatsApp com Ctrl+V' : 'Não foi possível copiar.', !ok);
+  },
+  'desc-imagem': function () {
+    const ent = entregaAtual();
+    copiarCanvas(desenharDescontos(ent, S.descontos), 'descontos-' + ent.data_entrega + '.png');
+  },
+  'desc-baixar': function () {
+    const ent = entregaAtual();
+    baixarCanvas(desenharDescontos(ent, S.descontos), 'descontos-' + ent.data_entrega + '.png');
+  },
   'baixar-imagem': function (el) {
     const ent = entregaAtual(), c = caminhaoDoBotao(el);
     baixarCanvas(desenharImagem(ent, c), nomeArquivo(ent, c));
