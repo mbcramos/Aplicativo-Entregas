@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#1f6b3a">
+  <title>Pesagem · Escritório</title>
+  <link rel="icon" href="../icons/icon-192.png">
+  <link rel="stylesheet" href="painel.css">
+</head>
+<body>
+  <header class="topo">
+    <div class="marca">Pesagem <span>Escritório</span></div>
+    <label class="seletor-data">
+      <span>Entrega</span>
+      <select id="sel-data" disabled><option>Carregando…</option></select>
+    </label>
+    <span id="pill-status" class="pill" hidden></span>
+    <div class="topo-dir">
+      <span id="atualizado" class="atualizado"></span>
+      <button class="btn btn-claro" id="btn-atualizar" data-acao="atualizar">⟳ Atualizar</button>
+      <button class="btn btn-claro btn-icone" data-acao="config" aria-label="Configurações" title="Configurações">⚙</button>
+    </div>
+  </header>
+
+  <main id="conteudo" class="conteudo">
+    <div class="vazio">Carregando…</div>
+  </main>
+
+  <dialog id="dlg-config" class="dialogo">
+    <form method="dialog" id="form-config">
+      <h2>Configurações</h2>
+      <label>Endereço do script (App da Web)
+        <input id="c-url" type="url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" required>
+        <small>O mesmo endereço usado no tablet. Termina em /exec.</small>
+      </label>
+      <label>Chave do escritório
+        <input id="c-chave" type="text" autocomplete="off" autocapitalize="characters" required>
+        <small>Na planilha: menu App de Pesagem › Mostrar chaves de acesso (é a chave do ESCRITÓRIO, não a do tablet).</small>
+      </label>
+      <div id="c-msg" class="msg-config"></div>
+      <div class="dialogo-botoes">
+        <button type="button" class="btn btn-sec" data-acao="testar-config">Testar conexão</button>
+        <span class="espaco"></span>
+        <button type="button" class="btn btn-sec" data-acao="fechar-config" id="c-cancelar">Cancelar</button>
+        <button type="submit" class="btn btn-pri" value="salvar">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-confirmar" class="dialogo dialogo-pequeno">
+    <form method="dialog">
+      <p id="conf-texto"></p>
+      <div class="dialogo-botoes">
+        <span class="espaco"></span>
+        <button class="btn btn-sec" value="nao">Cancelar</button>
+        <button class="btn btn-pri" value="sim" id="conf-sim">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="notas.js"></script>
+  <script src="painel.js"></script>
+</body>
+</html>

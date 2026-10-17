@@ -3,7 +3,7 @@
  * IMPORTANTE: ao alterar qualquer arquivo do app, aumente a VERSAO abaixo
  * (o tablet só baixa a nova versão quando este arquivo muda).
  */
-const VERSAO = 'pesagem-v1.4.0';
+const VERSAO = 'pesagem-v1.4.1';
 const ARQUIVOS = [
   './',
   './index.html',
@@ -42,6 +42,7 @@ self.addEventListener('fetch', function (ev) {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // planilha: sempre pela rede
+  if (url.pathname.indexOf('/escritorio/') >= 0) return; // painel do escritório: não é do tablet
 
   if (req.mode === 'navigate') {
     ev.respondWith(

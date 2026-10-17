@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const VERSAO_APP = '1.4.0';
+const VERSAO_APP = '1.4.1';
 const Calc = window.Calc;
 
 /* =========================================================================
