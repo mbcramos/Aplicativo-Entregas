@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const VERSAO_APP = '1.3.0';
+const VERSAO_APP = '1.4.0';
 const Calc = window.Calc;
 
 /* =========================================================================
@@ -120,6 +120,8 @@ function numParaCampo(n) {
   return String(n).replace('.', ',');
 }
 function chave(data, id) { return data + '|' + id; }
+const SETA_VOLTAR = '<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" focusable="false">' +
+  '<path d="M20 12H5M11 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function semAcento(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
@@ -274,7 +276,7 @@ function preencherFaixaStatus(e) {
   const f = $('#faixa-status');
   const classe = (S.sincronizando || S.enviando) ? 'faixa-azul'
     : e.nivel === 2 ? 'faixa-vermelha' : e.nivel === 1 ? 'faixa-amarela' : 'faixa-verde';
-  f.className = 'faixa ' + classe;
+  f.className = 'bolha ' + classe;
   f.innerHTML = '<div>' + esc(e.sync) + (e.envio ? '<small>' + esc(e.envio) + '</small>' : '') + '</div>';
 }
 /** Mostra a situação completa por alguns segundos (só na tela principal). */
@@ -408,28 +410,49 @@ function renderGradeLista() {
         ? '<button class="btn btn-fazenda-nao" data-acao="nao-entregou-fazenda" data-fazenda="' + esc(g.nome) + '">' +
           (faltamFaz === 1 ? 'Não entregou' : 'Nenhum entregou') + '</button>'
         : '') +
-      '</div></div>' +
-      g.parceiros.slice().sort(function (a, b) { return rankSituacao(a) - rankSituacao(b); })
-        .map(cartaoParceiro).join('');
+      '</div></div>' + cartoesDaFazenda(g.parceiros);
   }).join('');
 }
 
-/** Ordem dentro da fazenda: falta lançar, entregou, não entregou (a sort mantém a "ordem" em cada grupo). */
-function rankSituacao(p) {
-  const r = registroDe(p.id_parceiro);
-  if (!r) return 0;
-  return r.situacao === 'ENTREGOU' ? 1 : 2;
+/**
+ * Cartões de uma fazenda: primeiro os que faltam lançar; depois os que entregaram,
+ * agrupados por motorista (caminhão); por último os que não entregaram.
+ * Dentro de cada grupo mantém a ordem da coluna "ordem".
+ */
+function cartoesDaFazenda(parceiros) {
+  const faltam = [], naoEntregou = [];
+  const porMotorista = {};
+  parceiros.forEach(function (p) {
+    const r = registroDe(p.id_parceiro);
+    if (!r) { faltam.push(p); return; }
+    if (r.situacao !== 'ENTREGOU') { naoEntregou.push(p); return; }
+    const nome = normalizarNome(r.motorista) || 'Sem motorista';
+    const k = semAcento(nome);
+    if (!porMotorista[k]) porMotorista[k] = { nome: nome, parceiros: [], peso: 0 };
+    porMotorista[k].parceiros.push(p);
+    porMotorista[k].peso = Calc.arred(porMotorista[k].peso + (r.peso_total_kg || 0), 1);
+  });
+  let html = faltam.map(cartaoParceiro).join('');
+  Object.values(porMotorista)
+    .sort(function (x, y) { return x.nome.localeCompare(y.nome, 'pt-BR'); })
+    .forEach(function (m) {
+      html += '<div class="subgrupo subgrupo-motorista">🚚 ' + esc(m.nome) +
+        '<span>' + m.parceiros.length + (m.parceiros.length === 1 ? ' parceiro' : ' parceiros') +
+        ' · ' + fmtKg(m.peso) + '</span></div>' + m.parceiros.map(cartaoParceiro).join('');
+    });
+  if (naoEntregou.length) {
+    html += '<div class="subgrupo subgrupo-nao">Não entregaram</div>' + naoEntregou.map(cartaoParceiro).join('');
+  }
+  return html;
 }
 
 function cartaoParceiro(p) {
   const r = registroDe(p.id_parceiro);
   let classe = 'a-pesar', estado = '<b>A pesar</b>';
-  let motorista = '';
   if (r) {
     if (r.situacao === 'ENTREGOU') {
       classe = 'pesado';
       estado = '<b>' + fmtKg(r.peso_total_kg) + '</b>';
-      if (r.motorista) motorista = '<div class="motorista-cartao">🚚 ' + esc(r.motorista) + '</div>';
     } else {
       classe = 'nao-entregou';
       estado = '<b>Não entregou</b>';
@@ -438,7 +461,7 @@ function cartaoParceiro(p) {
   const sub = p.apelido && p.nome !== p.apelido ? p.nome : '';
   return '<button class="cartao ' + classe + '" data-acao="abrir-parceiro" data-id="' + esc(p.id_parceiro) + '">' +
     '<div class="info"><div class="apelido">' + esc(nomeExibicao(p)) + '</div>' +
-    (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + motorista + '</div>' +
+    (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div>' +
     '<div class="estado">' + estado + '</div></button>';
 }
 
@@ -486,7 +509,7 @@ function renderParceiro() {
 
   $('#tela').innerHTML =
     '<div class="cab-parceiro">' +
-    '<button class="btn btn-voltar" data-acao="voltar" aria-label="Voltar">←</button>' +
+    '<button class="btn btn-voltar" data-acao="voltar" aria-label="Voltar">' + SETA_VOLTAR + '</button>' +
     '<div class="nomes"><h1>' + esc(nomeExibicao(p)) + '</h1>' +
     (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') +
     '<div class="etiquetas">' +
@@ -496,19 +519,19 @@ function renderParceiro() {
     '</div></div></div>' +
     (p.observacoes ? '<div class="obs-fixa">📝 ' + esc(p.observacoes) + '</div>' : '') +
     estadoReg +
-    '<div class="form-grade"><div>' +
+    '<div class="form-unica">' +
 
     '<div class="campo"><label for="f-peso">Peso total</label>' +
     '<div class="com-unidade"><input id="f-peso" class="entrada" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0" value="' + esc(f.peso) + '"><span class="unidade">kg</span></div>' +
     '<div class="erro-campo" id="e-peso"></div></div>' +
 
-    '<div class="campo" style="margin-top:14px"><span class="rotulo">Motorista (caminhão)</span>' +
+    '<div class="campo"><span class="rotulo">Motorista (caminhão)</span>' +
     '<div class="motoristas" id="mot-botoes"></div>' +
     '<div id="mot-novo" class="mot-novo" hidden>' +
     '<input id="f-mot" class="entrada entrada-nome" type="text" autocomplete="off" autocapitalize="words" enterkeyhint="done" maxlength="40" placeholder="Nome do motorista" value="' + esc(f.motoristaNovo ? f.motorista : '') + '"></div>' +
     '<div class="erro-campo" id="e-mot"></div></div>' +
 
-    '<div class="campo" style="margin-top:14px"><label for="f-pen">Penalidade (0 a ' + Calc.PENALIDADE_MAX + '%)</label>' +
+    '<div class="campo"><label for="f-pen">Penalidade (0 a ' + Calc.PENALIDADE_MAX + '%)</label>' +
     '<div class="com-unidade"><input id="f-pen" class="entrada" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" value="' + esc(f.pen) + '"><span class="unidade">%</span></div>' +
     '<div class="botoes-rapidos" id="pen-rapidos">' +
     [0, 1, 2, 3, 4].map(function (v) {
@@ -516,7 +539,9 @@ function renderParceiro() {
     }).join('') + '</div>' +
     '<div class="erro-campo" id="e-pen"></div></div>' +
 
-    '<div class="campo" style="margin-top:14px"><span class="rotulo">Desconto em R$</span>' +
+    '<div class="recebe" id="resultado"></div>' +
+
+    '<div class="campo"><span class="rotulo">Desconto em R$</span>' +
     '<div class="modos" id="modos">' +
     '<button class="btn" data-acao="modo" data-valor="NENHUM">Sem desconto</button>' +
     '<button class="btn" data-acao="modo" data-valor="VALOR">Digitar valor</button>' +
@@ -526,19 +551,15 @@ function renderParceiro() {
     '<div class="com-unidade"><span class="unidade">R$</span><input id="f-desc" class="entrada" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0,00" value="' + esc(f.desc) + '"></div>' +
     '<div class="erro-campo" id="e-desc"></div></div></div>' +
 
-    '<div class="campo" style="margin-top:14px"><label for="f-obs">Observações</label>' +
-    '<textarea id="f-obs" class="entrada entrada-texto" placeholder="(opcional)">' + esc(f.obs) + '</textarea></div>' +
-
-    '</div><div>' +
-    '<div class="resultado" id="resultado"></div>' +
     '<div class="acoes-form">' +
     '<button class="btn btn-grande btn-verde" data-acao="salvar">✔ SALVAR</button>' +
     (r && r.situacao === 'NAO_ENTREGOU' ? '' :
       '<button class="btn btn-grande btn-laranja" data-acao="nao-entregou">Não entregou</button>') +
     '</div>' +
-    '<div class="zona-perigo"><button class="btn btn-link-perigo" data-acao="remover-parceiro">' +
-    'Remover parceiro da lista (não trabalha mais com a fazenda)</button></div>' +
-    '</div></div>';
+
+    '<div class="campo"><label for="f-obs">Observações</label>' +
+    '<textarea id="f-obs" class="entrada entrada-texto" placeholder="(opcional)">' + esc(f.obs) + '</textarea></div>' +
+    '</div>';
 
   renderMotoristas();
   atualizarBotoesForm();
@@ -613,34 +634,24 @@ function atualizarResultado() {
   if (S.form.modo === 'VALOR') marcarCampo('#f-desc', '#e-desc', lf.desc);
 
   const r = Calc.calcular(lf.entrada(p, ent));
-  let html = '<h2>Resultado</h2>';
+  let valor = fmtR(0), dica = '', erro = '';
   if (r.erros.length) {
-    html += '<div class="res-erros">' + r.erros.map(esc).join('<br>') + '</div>';
+    erro = r.erros.map(function (x) {
+      return /máximo/.test(x) ? 'O desconto passa do máximo possível (' + fmtR(r.desconto_maximo) + ').' : x;
+    }).join(' ');
+    if (r.valor_bruto_parceiro) valor = fmtR(Math.max(r.valor_parceiro, 0));
   } else if (r.falta_peso || !lf.peso.ok) {
-    html += '<div class="res-dica">Digite o peso total para ver o cálculo.</div>' +
-      '<div class="res-final"><div class="rot">PARCEIRO RECEBE</div><div class="val">' + fmtR(0) + '</div></div>';
+    dica = 'Digite o peso para ver o valor';
   } else {
-    const pen = lf.pen.ok ? (lf.pen.valor || 0) : 0;
-    const nomeNota = p.tem_ie === 'SIM' ? 'parceiro' : p.tem_ie === 'NAO' ? 'proprietário' : 'outro';
-    html +=
-      linhaRes('Participação', pen > 0
-        ? fmtPct(p.participacao_pct) + ' − ' + fmtPct(pen) + ' = ' + fmtPct(r.pct_efetivo)
-        : fmtPct(p.participacao_pct)) +
-      linhaRes('Parte do parceiro <small>(nota em nome do ' + nomeNota + ')</small>', fmtKg(r.peso_parte_parceiro)) +
-      linhaRes('Parte do proprietário', fmtKg(r.peso_proprietario)) +
-      linhaRes('Valor do parceiro (sem descontos)', fmtR(r.valor_bruto_parceiro)) +
-      linhaRes('Impostos (' + fmtPct(Calc.IMPOSTO_PCT) + ')', '− ' + fmtR(r.valor_imposto), 'desconto') +
-      linhaRes('Desconto' + (S.form.modo === 'MAXIMO' ? ' (máximo)' : ''), '− ' + fmtR(r.desconto_aplicado), 'desconto') +
-      '<div class="res-linha"><span style="color:var(--texto-suave)">Desconto máximo possível</span><span style="font-weight:600;color:var(--texto-suave)">' + fmtR(r.desconto_maximo) + '</span></div>' +
-      '<div class="res-final"><div class="rot">PARCEIRO RECEBE</div><div class="val">' + fmtR(r.valor_parceiro) + '</div>' +
-      '<div style="margin-top:4px;color:var(--texto-suave);font-weight:600">Proprietário: ' + fmtR(r.valor_proprietario) + '</div></div>';
+    valor = fmtR(r.valor_parceiro);
+    dica = S.form.modo === 'NENHUM' ? 'Já descontados os impostos (' + fmtPct(Calc.IMPOSTO_PCT) + ')'
+      : 'Já descontados os impostos e o desconto';
   }
-  el.innerHTML = html;
+  el.classList.toggle('com-erro', !!erro);
+  el.innerHTML = '<div class="rot">PARCEIRO RECEBE</div><div class="val">' + valor + '</div>' +
+    '<div class="' + (erro ? 'recebe-erro' : 'recebe-dica') + '">' + esc(erro || dica || ' ') + '</div>';
 }
 
-function linhaRes(rot, val, classe) {
-  return '<div class="res-linha' + (classe ? ' ' + classe : '') + '"><span>' + rot + '</span><span>' + val + '</span></div>';
-}
 
 function montarRegistro(p, ent, situacao, r, extra) {
   const k = chave(ent.data_entrega, p.id_parceiro);
@@ -772,21 +783,6 @@ async function gravarRegistro(reg, mensagem) {
   enviarPendentes();
 }
 
-async function removerParceiro() {
-  const p = parceiroPorId(S.parceiroId);
-  if (!p) return;
-  const ok = await confirmar('Remover ' + nomeExibicao(p) + ' da lista?\n\n' +
-    'Use só se o parceiro NÃO trabalha mais com a fazenda. Ele será marcado como inativo na planilha ' +
-    'e não aparecerá mais nas próximas entregas.', 'Remover', 'btn-vermelho');
-  if (!ok) return;
-  S.inativacoes.push({ id_parceiro: p.id_parceiro, em: new Date().toISOString() });
-  try { await salvarEstado(); } catch (e) { return; }
-  S.form.alterado = false;
-  aviso(nomeExibicao(p) + ' removido da lista');
-  voltarParaLista();
-  enviarPendentes();
-}
-
 function voltarParaLista() {
   if (history.state && history.state.tela && history.state.tela !== 'lista') {
     history.back(); // o evento popstate desenha a lista
@@ -814,7 +810,7 @@ function renderConfig() {
   $('#tela').innerHTML =
     '<div class="config">' +
     '<div class="cab-parceiro">' +
-    (S.config ? '<button class="btn btn-voltar" data-acao="voltar" aria-label="Voltar">←</button>' : '') +
+    (S.config ? '<button class="btn btn-voltar" data-acao="voltar" aria-label="Voltar">' + SETA_VOLTAR + '</button>' : '') +
     '<div class="nomes"><h1>Configurações</h1></div></div>' +
     '<div class="campo"><label for="c-url">Endereço do script (App da Web)</label>' +
     '<input id="c-url" class="entrada" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec" value="' + esc(c.url) + '">' +
@@ -1094,7 +1090,6 @@ const ACOES = {
   'salvar': salvarEntrega,
   'nao-entregou': marcarNaoEntregou,
   'nao-entregou-fazenda': function (el) { marcarFazendaNaoEntregou(el.dataset.fazenda); },
-  'remover-parceiro': removerParceiro,
   'status': function () {
     mostrarStatus();
     if (estadoSync().totalPend || estadoSync().erros) enviarPendentes({ manual: true });

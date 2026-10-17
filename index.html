@@ -18,12 +18,14 @@
       <button class="status-sync" id="status-sync" data-acao="status" data-estado="ok" hidden></button>
       <button class="btn btn-topo" data-acao="sincronizar" id="btn-sync">⟳ Sincronizar</button>
     </div>
+    <div class="bolhas">
+      <div id="faixa-status" class="bolha" data-acao="fechar-status" hidden></div>
+      <div id="faixa-atualizacao" class="bolha faixa-azul" hidden>
+        <div>Nova versão do app disponível.</div>
+        <button class="btn btn-pequeno" data-acao="atualizar-app">Atualizar agora</button>
+      </div>
+    </div>
   </header>
-  <div id="faixa-status" class="faixa" data-acao="fechar-status" hidden></div>
-  <div id="faixa-atualizacao" class="faixa faixa-azul" hidden>
-    Nova versão do app disponível.
-    <button class="btn btn-pequeno" data-acao="atualizar-app">Atualizar agora</button>
-  </div>
 
   <main id="tela"></main>
 
