@@ -312,10 +312,53 @@
     return L.join('\n');
   }
 
+  /**
+   * Pagamentos de parceiros com nota em nome de outro (peso_nome_outro > 0): apelido do parceiro,
+   * apelido de quem está na nota e o valor que ele deve receber. Ordenado por quem está na nota.
+   */
+  function listaOutros(lancamentos, parceiros) {
+    const porId = {};
+    (parceiros || []).forEach(function (p) { porId[p.id_parceiro] = p; });
+    const erros = [];
+    const itens = [];
+    lancamentos.forEach(function (l) {
+      if (l.situacao !== 'ENTREGOU' || !(num(l.peso_nome_outro) > 0)) return;
+      const p = porId[l.id_parceiro];
+      const apelido = normalizarNome((p && p.apelido) || l.apelido || (p && p.nome) || l.nome) || l.id_parceiro;
+      let nota = '';
+      if (!p) erros.push(apelido + ': parceiro ' + l.id_parceiro + ' não existe mais na aba Parceiros.');
+      else {
+        const m = acharParceiroDaNota(p, parceiros);
+        if (m.erro) erros.push(m.erro);
+        else nota = normalizarNome(m.parceiro.apelido || m.parceiro.nome);
+      }
+      itens.push({ id_parceiro: l.id_parceiro, apelido: apelido, nota: nota, motorista: normalizarNome(l.motorista),
+        valor: arred(num(l.valor_parceiro), 2) });
+    });
+    itens.sort(function (a, b) {
+      if (!a.nota !== !b.nota) return a.nota ? -1 : 1; // sem parceiro encontrado: no fim
+      return a.nota.localeCompare(b.nota, 'pt-BR') || a.apelido.localeCompare(b.apelido, 'pt-BR');
+    });
+    return { itens: itens, erros: erros, ok: erros.length === 0,
+      total: arred(itens.reduce(function (s, x) { return s + x.valor; }, 0), 2) };
+  }
+
+  /** Texto (WhatsApp) dos pagamentos em nome de outro. */
+  function textoOutros(entrega, lista) {
+    const L = ['*PAGAMENTOS COM NOTA EM NOME DE OUTRO – ' + fmtData(entrega.data_entrega) + '*', ''];
+    lista.itens.forEach(function (x) {
+      L.push('• *' + x.apelido + '* → nota de *' + x.nota + '*: ' + fmtR(x.valor));
+    });
+    L.push('');
+    L.push('Total: ' + fmtR(lista.total) + ' (' + lista.itens.length + (lista.itens.length === 1 ? ' parceiro)' : ' parceiros)'));
+    return L.join('\n');
+  }
+
   const api = {
     ALIQUOTA_ICMS: ALIQUOTA_ICMS, arred: arred, semAcento: semAcento, normalizarNome: normalizarNome,
     fmtNum: fmtNum, fmtKg: fmtKg, fmtR: fmtR, fmtPreco: fmtPreco, fmtData: fmtData,
     acharParceiroDaNota: acharParceiroDaNota, montarNotas: montarNotas, resumir: resumir, textoWhatsApp: textoWhatsApp,
+    listaOutros: listaOutros, textoOutros: textoOutros,
     listaDescontos: listaDescontos, rotuloDesconto: rotuloDesconto, textoDescontos: textoDescontos,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

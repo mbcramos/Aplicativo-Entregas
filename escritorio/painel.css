@@ -207,3 +207,80 @@ tfoot td { font-weight: 800; border-top: 2px solid var(--linha); border-bottom: 
 
 .link-acesso { display: grid; gap: 4px; justify-items: start; padding: 10px 12px; background: #f6f7f3; border-radius: 8px; }
 .link-acesso[hidden] { display: none; }
+
+/* ---------- pagamentos com nota de outro ---------- */
+.outros .cartao-cab .chip { margin-left: auto; }
+.ajuda-card { font-size: .82rem; color: var(--suave); margin-bottom: 8px; }
+.outros .erros { margin-top: 8px; }
+
+/* =====================================================================
+ * Telas pequenas (notebook pequeno, tablet, celular)
+ * Telas normais (acima de 1100px) não mudam.
+ * ===================================================================== */
+@media (max-width: 1100px) {
+  html { font-size: 14px; }
+  .grade-2 { grid-template-columns: 1fr; }
+  .pilha { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
+  th { white-space: normal; vertical-align: bottom; padding: 6px 6px; }
+  td { padding: 7px 6px; overflow-wrap: anywhere; }
+  td.num { overflow-wrap: normal; }
+  .caminhao h3 { font-size: 1.05rem; }
+  .acoes-cam { margin-left: 0; }
+}
+
+@media (max-width: 900px) {
+  /* tabelas viram fichas: sem rolagem para o lado */
+  table.responsiva, table.responsiva tbody, table.responsiva tfoot { display: block; }
+  table.responsiva thead { display: none; }
+  table.responsiva tr {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 14px;
+    padding: 9px 10px; border-bottom: 1px solid var(--linha);
+  }
+  table.responsiva tbody tr:hover td { background: none; }
+  table.responsiva td {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+    padding: 2px 0; border: none; text-align: right; min-width: 0;
+  }
+  table.responsiva td::before {
+    content: attr(data-label); flex-shrink: 0; text-align: left;
+    font-size: .72rem; font-weight: 700; color: var(--suave); text-transform: uppercase; letter-spacing: .03em;
+  }
+  table.responsiva td:first-child { grid-column: 1 / -1; display: block; text-align: left; padding-bottom: 4px; }
+  table.responsiva td:first-child::before { content: none; }
+  table.responsiva td.vazia { display: none; }
+  table.responsiva tfoot tr { background: #f6f7f3; border-top: 2px solid var(--linha); }
+  table.responsiva tfoot td { font-weight: 800; }
+  .tab-rolagem { overflow-x: visible; }
+  .cam-tabela { padding: 0; }
+}
+
+@media (max-width: 760px) {
+  html { font-size: 13.5px; }
+  .topo { padding: 8px 12px; gap: 8px 10px; }
+  .marca span, .atualizado { display: none; }
+  .marca { order: 1; }
+  .topo-dir { order: 2; margin-left: auto; }
+  .seletor-data { order: 3; flex: 1 1 calc(100% - 120px); min-width: 0; }
+  .seletor-data select { min-width: 0; width: 100%; }
+  #pill-status { order: 4; }
+  .conteudo { padding: 12px 10px 40px; }
+  .entrega { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .entrega > div:last-child { grid-column: 1 / -1; }
+  .entrega > div:last-child .btn { width: 100%; justify-content: center; }
+  .indicadores { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .ind { padding: 10px 12px; }
+  .ind .grande { font-size: 1.5rem; }
+  .icms-conta { max-width: none; }
+  .grade-2, .pilha { gap: 10px; }
+  .cartao-cab { padding: 10px 12px; flex-wrap: wrap; }
+  .cartao-corpo, .cam-notas { padding: 10px 12px; }
+  .caminhao .cartao-cab { gap: 8px; }
+  .acoes-cam, .acoes-desc { width: 100%; }
+  .acoes-cam .btn, .acoes-desc .btn { flex: 1 1 0; justify-content: center; padding: 0 8px; }
+  .descontos .cartao-cab .chip, .outros .cartao-cab .chip { margin-left: auto; }
+  .lista-totais { gap: 6px 10px; }
+
+  .barra { max-width: 260px; }
+  .dialogo form { padding: 16px; }
+  .dialogo-botoes { flex-wrap: wrap; }
+}

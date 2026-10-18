@@ -144,8 +144,29 @@ function renderTudo() {
     htmlEntrega(ent) +
     htmlIndicadores(r, ent) +
     '<div class="grade-2" style="margin-top:16px">' + htmlFazendas(r) +
-    '<div class="pilha">' + htmlTotais(r) + htmlDescontos() + '</div></div>' +
+    '<div class="pilha">' + htmlTotais(r) + htmlDescontos() + htmlOutros() + '</div></div>' +
     htmlCaminhoes(r, ent);
+  rotularTabelas(main);
+}
+
+/**
+ * Em telas pequenas as tabelas viram "fichas": cada célula mostra o nome da coluna.
+ * Aqui cada <td> recebe o nome da sua coluna (data-label) e as células vazias ("—") são marcadas.
+ */
+function rotularTabelas(raiz) {
+  raiz.querySelectorAll('table').forEach(function (t) {
+    t.classList.add('responsiva');
+    const nomes = Array.prototype.map.call(t.querySelectorAll('thead th'), function (th) { return th.textContent.trim(); });
+    t.querySelectorAll('tbody tr, tfoot tr').forEach(function (tr) {
+      let col = 0;
+      Array.prototype.forEach.call(tr.children, function (td) {
+        if (!td.hasAttribute('data-label')) td.setAttribute('data-label', nomes[col] || '');
+        const txt = td.textContent.trim();
+        if (txt === '' || txt === '—') td.classList.add('vazia');
+        col += td.colSpan || 1;
+      });
+    });
+  });
 }
 
 function campoEntrega(rot, valor, obrig) {
@@ -238,6 +259,35 @@ function htmlDescontos() {
     '<button class="btn btn-sec" data-acao="desc-texto"' + bloqueio + '>📋 Copiar texto</button>' +
     '<button class="btn btn-pri" data-acao="desc-imagem"' + bloqueio + '>🖼 Copiar imagem</button>' +
     '<button class="btn btn-sec" data-acao="desc-baixar"' + bloqueio + '>⬇ PNG</button>' +
+    '</div></div></div>';
+}
+
+function htmlOutros() {
+  const o = N.listaOutros(S.dados.lancamentos, S.dados.parceiros);
+  S.outros = o;
+  const vazio = !o.itens.length;
+  const bloqueio = vazio ? ' disabled title="Nenhum pagamento em nome de outro nesta data"'
+    : (!o.ok ? ' disabled title="Corrija os erros antes de exportar"' : '');
+  return '<div class="cartao outros"><div class="cartao-cab"><h3>Pagamentos com nota de outro</h3>' +
+    '<span class="chip"><b>' + R$(o.total) + '</b></span></div>' +
+    '<div class="cartao-corpo">' +
+    '<div class="ajuda-card">Parceiros com I.E. OUTRO: o valor deles vai junto com o de quem está na nota. ' +
+    'Envie ao gerente para avisar quem recebe por outro.</div>' +
+    (vazio ? '<div class="zero">Nenhum pagamento em nome de outro nesta data.</div>'
+      : '<div class="lista-descontos">' + o.itens.map(function (x) {
+        return '<div class="nota-linha"><span><b>' + esc(x.apelido) + '</b> → nota de ' +
+          (x.nota ? '<b>' + esc(x.nota) + '</b>' : '<b style="color:var(--vermelho)">não encontrado</b>') +
+          (x.motorista ? '<small>🚚 ' + esc(x.motorista) + '</small>' : '') + '</span>' +
+          '<span class="num">' + R$(x.valor) + '</span></div>';
+      }).join('') + '</div>' +
+      '<div class="nota-sub"><span>' + o.itens.length + (o.itens.length === 1 ? ' parceiro' : ' parceiros') + '</span>' +
+      '<span class="num"><b>' + R$(o.total) + '</b></span></div>' +
+      (o.ok ? '' : '<div class="erros"><b>Exportação bloqueada</b><ul>' +
+        o.erros.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></div>')) +
+    '<div class="acoes-desc">' +
+    '<button class="btn btn-sec" data-acao="outros-texto"' + bloqueio + '>📋 Copiar texto</button>' +
+    '<button class="btn btn-pri" data-acao="outros-imagem"' + bloqueio + '>🖼 Copiar imagem</button>' +
+    '<button class="btn btn-sec" data-acao="outros-baixar"' + bloqueio + '>⬇ PNG</button>' +
     '</div></div></div>';
 }
 
@@ -460,61 +510,88 @@ function desenharImagem(ent, c) {
   return cv;
 }
 
-/** Imagem da lista de descontos: Parceiro | Fazenda | Desconto, com total. */
-function desenharDescontos(ent, d) {
+/**
+ * Imagem de uma lista simples (cabeçalho verde, tabela, faixa de total).
+ * cfg = { titulo, subtitulo, direita, colunas: [{ rot, alin, peso, max }], linhas: [[texto, ...]], totalRot, totalVal }
+ */
+function desenharLista(cfg) {
   const ESC = 2, M = 28, PAD = 14, GAP = 36, LIN = 34, CAB_TAB = 30;
   const fonte = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
   const med = document.createElement('canvas').getContext('2d');
   function larg(t, tam, peso) { med.font = (peso || 400) + ' ' + tam + 'px ' + fonte; return med.measureText(String(t)).width; }
-  let wNome = larg('PARCEIRO', 12, 800), wFaz = larg('FAZENDA', 12, 800), wVal = larg(R$(d.total), 17, 800);
-  d.itens.forEach(function (x) {
-    wNome = Math.max(wNome, larg(N.rotuloDesconto(x), 16, 600));
-    wFaz = Math.max(wFaz, larg(x.fazenda, 15, 500));
-    wVal = Math.max(wVal, larg(R$(x.valor), 16, 800));
+  const cols = cfg.colunas.map(function (c, i) {
+    let w = larg(c.rot, 12, 800);
+    cfg.linhas.forEach(function (l) { w = Math.max(w, larg(l[i], 16, c.peso || 500)); });
+    if (i === cfg.colunas.length - 1) w = Math.max(w, larg(cfg.totalVal, 20, 800) - PAD);
+    return Object.assign({ w: Math.min(w, c.max || 460) }, c);
   });
-  wNome = Math.min(wNome, 460); wFaz = Math.min(wFaz, 300);
-  const W = Math.max(640, Math.ceil(2 * M + 2 * PAD + wNome + wFaz + wVal + 2 * GAP));
-  const xNome = M + PAD, xFaz = W - M - PAD - wVal - GAP - wFaz, xVal = W - M - PAD;
-  const h = 96 + 16 + CAB_TAB + d.itens.length * LIN + 16 + 44 + M;
+  const W = Math.max(640, Math.ceil(2 * M + 2 * PAD + cols.reduce(function (s, c) { return s + c.w; }, 0) + GAP * (cols.length - 1)));
+  // última coluna encostada à direita; as outras da esquerda para a direita
+  let x = M + PAD;
+  cols.forEach(function (c, i) { c.x = i === cols.length - 1 ? W - M - PAD - c.w : x; x += c.w + GAP; });
+  const h = 96 + 16 + CAB_TAB + cfg.linhas.length * LIN + 16 + 44 + M;
 
   const cv = document.createElement('canvas');
   cv.width = W * ESC; cv.height = h * ESC;
   const g = cv.getContext('2d');
   g.scale(ESC, ESC);
   g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, h);
-  function txt(t, x, y, tam, peso, cor, alin) {
+  function txt(t, xx, y, tam, peso, cor, alin) {
     g.font = (peso || 400) + ' ' + tam + 'px ' + fonte; g.fillStyle = cor || '#1b1d1a';
-    g.textAlign = alin || 'left'; g.textBaseline = 'middle'; g.fillText(t, x, y);
+    g.textAlign = alin || 'left'; g.textBaseline = 'middle'; g.fillText(t, xx, y);
   }
   function cortar(t, l, tam, peso) {
+    t = String(t);
     g.font = (peso || 400) + ' ' + tam + 'px ' + fonte;
     if (g.measureText(t).width <= l + 0.5) return t;
     while (t.length > 1 && g.measureText(t + '…').width > l) t = t.slice(0, -1);
     return t + '…';
   }
+  function emCol(c, t, y, tam, peso, cor) {
+    const dir = c.alin === 'right';
+    txt(cortar(t, c.w, tam, peso), dir ? c.x + c.w : c.x, y, tam, peso, cor, dir ? 'right' : 'left');
+  }
   g.fillStyle = '#1f6b3a'; g.fillRect(0, 0, W, 96);
-  txt('DESCONTOS – ' + dataBR(ent.data_entrega), M, 38, 26, 800, '#ffffff');
-  txt('Descontos dos parceiros (R$)', M, 72, 18, 600, '#e6f2ea');
-  txt(d.itens.length + (d.itens.length === 1 ? ' parceiro' : ' parceiros'), W - M, 72, 16, 600, '#e6f2ea', 'right');
+  txt(cfg.titulo, M, 38, 26, 800, '#ffffff');
+  txt(cfg.subtitulo, M, 72, 18, 600, '#e6f2ea');
+  txt(cfg.direita, W - M, 72, 16, 600, '#e6f2ea', 'right');
   let y = 96 + 16;
   g.fillStyle = '#eef3ef'; g.fillRect(M, y, W - 2 * M, CAB_TAB);
-  txt('PARCEIRO', xNome, y + CAB_TAB / 2, 12, 800, '#5b6157');
-  txt('FAZENDA', xFaz, y + CAB_TAB / 2, 12, 800, '#5b6157');
-  txt('DESCONTO', xVal, y + CAB_TAB / 2, 12, 800, '#5b6157', 'right');
+  cols.forEach(function (c) { emCol(c, c.rot, y + CAB_TAB / 2, 12, 800, '#5b6157'); });
   y += CAB_TAB;
-  d.itens.forEach(function (x, i) {
+  cfg.linhas.forEach(function (l, i) {
     if (i % 2 === 1) { g.fillStyle = '#fafbf8'; g.fillRect(M, y, W - 2 * M, LIN); }
-    txt(cortar(N.rotuloDesconto(x), wNome, 16, 600), xNome, y + LIN / 2, 16, 600);
-    txt(cortar(x.fazenda, wFaz, 15, 500), xFaz, y + LIN / 2, 15, 500);
-    txt(R$(x.valor), xVal, y + LIN / 2, 16, 800, '#1b1d1a', 'right');
+    cols.forEach(function (c, j) { emCol(c, l[j], y + LIN / 2, 16, c.peso || 500); });
     g.fillStyle = '#e4e6df'; g.fillRect(M, y + LIN - 1, W - 2 * M, 1);
     y += LIN;
   });
   y += 16;
   g.fillStyle = '#1f6b3a'; g.fillRect(M, y, W - 2 * M, 44);
-  txt('Total de descontos', M + PAD, y + 22, 17, 700, '#ffffff');
-  txt(R$(d.total), W - M - PAD, y + 22, 20, 800, '#ffffff', 'right');
+  txt(cfg.totalRot, M + PAD, y + 22, 17, 700, '#ffffff');
+  txt(cfg.totalVal, W - M - PAD, y + 22, 20, 800, '#ffffff', 'right');
   return cv;
+}
+
+function qtdeParceiros(n) { return n + (n === 1 ? ' parceiro' : ' parceiros'); }
+
+function desenharDescontos(ent, d) {
+  return desenharLista({
+    titulo: 'DESCONTOS – ' + dataBR(ent.data_entrega), subtitulo: 'Descontos dos parceiros (R$)',
+    direita: qtdeParceiros(d.itens.length),
+    colunas: [{ rot: 'PARCEIRO', peso: 600 }, { rot: 'FAZENDA', max: 300 }, { rot: 'DESCONTO', alin: 'right', peso: 800 }],
+    linhas: d.itens.map(function (x) { return [N.rotuloDesconto(x), x.fazenda, R$(x.valor)]; }),
+    totalRot: 'Total de descontos', totalVal: R$(d.total),
+  });
+}
+
+function desenharOutros(ent, o) {
+  return desenharLista({
+    titulo: 'NOTA DE OUTRO – ' + dataBR(ent.data_entrega), subtitulo: 'Pagamentos que vão junto com outro parceiro',
+    direita: qtdeParceiros(o.itens.length),
+    colunas: [{ rot: 'PARCEIRO', peso: 700 }, { rot: 'NOTA EM NOME DE', peso: 600 }, { rot: 'VALOR A RECEBER', alin: 'right', peso: 800 }],
+    linhas: o.itens.map(function (x) { return [x.apelido, x.nota, R$(x.valor)]; }),
+    totalRot: 'Total', totalVal: R$(o.total),
+  });
 }
 
 function nomeArquivo(ent, c) { return 'notas-' + ent.data_entrega + '-' + slug(c.motorista) + '.png'; }
@@ -615,6 +692,18 @@ const ACOES = {
   'desc-imagem': function () {
     const ent = entregaAtual();
     copiarCanvas(desenharDescontos(ent, S.descontos), 'descontos-' + ent.data_entrega + '.png');
+  },
+  'outros-texto': async function () {
+    const ok = await copiarTexto(N.textoOutros(entregaAtual(), S.outros));
+    toast(ok ? 'Lista copiada ✔ Cole no WhatsApp com Ctrl+V' : 'Não foi possível copiar.', !ok);
+  },
+  'outros-imagem': function () {
+    const ent = entregaAtual();
+    copiarCanvas(desenharOutros(ent, S.outros), 'nota-de-outro-' + ent.data_entrega + '.png');
+  },
+  'outros-baixar': function () {
+    const ent = entregaAtual();
+    baixarCanvas(desenharOutros(ent, S.outros), 'nota-de-outro-' + ent.data_entrega + '.png');
   },
   'desc-baixar': function () {
     const ent = entregaAtual();

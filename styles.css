@@ -32,6 +32,7 @@ body {
 }
 
 button, input, textarea { font: inherit; color: inherit; }
+button:not(:disabled), .cartao { cursor: pointer; }
 
 /* ---------- topo e faixas ---------- */
 .topo {
