@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const VERSAO_APP = '1.4.1';
+const VERSAO_APP = '1.5.0';
 const Calc = window.Calc;
 
 /* =========================================================================
@@ -881,11 +881,41 @@ async function testarConexao() {
   if (erro) { aviso(erro, 4500); return; }
   aviso('Testando...', 10000);
   try {
-    await chamar({ acao: 'ping' }, c, 20000);
+    const r = await chamar({ acao: 'ping' }, c, 20000);
+    if (r.tipo === 'escritorio') { aviso('Esta é a chave do ESCRITÓRIO. Use a chave do TABLET.', 5000); return; }
     aviso('Conexão OK ✔ Toque em Salvar.', 3500);
   } catch (e) {
     aviso(e.message, 5000);
   }
+}
+
+/**
+ * Link de configuração: <site>/#url=<endereço do script>&chave=<chave do tablet>[&nome=<nome do tablet>]
+ * Lê, salva e tira os dados do endereço (a parte depois de # nunca é enviada ao servidor do site).
+ * Devolve true se a configuração mudou.
+ */
+async function aplicarLinkConfig() {
+  const h = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  if (!h.has('url') && !h.has('chave')) return false;
+  history.replaceState(history.state, '', location.pathname + location.search);
+  const c = {
+    url: (h.get('url') || '').trim(),
+    chave: (h.get('chave') || '').trim().toUpperCase(),
+    dispositivo: (h.get('nome') || (S.config && S.config.dispositivo) || 'tablet-1').trim(),
+  };
+  const erro = validarConfig(c);
+  if (erro) { aviso('Link de configuração inválido. ' + erro, 8000); return false; }
+  if (S.config && S.config.url === c.url && S.config.chave === c.chave) {
+    if (c.dispositivo !== S.config.dispositivo) { S.config.dispositivo = c.dispositivo; await DB.set('config', S.config); }
+    aviso('Este tablet já está configurado ✔', 3500);
+    return false;
+  }
+  if (S.config && !(await confirmar('Este link traz outra configuração (endereço/chave da planilha).\n\nSubstituir a configuração deste tablet?',
+    'Substituir', 'btn-verde', 'Manter a atual'))) return false;
+  S.config = c;
+  await DB.set('config', c);
+  aviso('Tablet configurado pelo link ✔', 4000);
+  return true;
 }
 
 async function apagarDados() {
@@ -1151,6 +1181,11 @@ window.addEventListener('popstate', async function (ev) {
 });
 
 window.addEventListener('online', function () { enviarPendentes(); });
+// link de configuração colado com o app já aberto (só muda a parte depois de #)
+window.addEventListener('hashchange', async function () {
+  if (!/url=|chave=/.test(location.hash)) return;
+  if (await aplicarLinkConfig()) { render(); sincronizar(); }
+});
 document.addEventListener('visibilitychange', function () {
   if (document.visibilityState === 'visible') { renderFaixas(); enviarPendentes(); }
 });
@@ -1207,13 +1242,17 @@ async function iniciar() {
     aviso('Não foi possível ler os dados do tablet: ' + (err && err.message ? err.message : err), 10000);
   }
 
+  let configuradoPeloLink = false;
+  try { configuradoPeloLink = await aplicarLinkConfig(); } catch (err) { aviso('Erro no link de configuração.', 6000); }
+
   history.replaceState({ tela: 'lista' }, '');
   if (!S.config) {
     S.tela = 'config';
     history.pushState({ tela: 'config' }, '');
   }
   render();
-  mostrarStatus();
+  if (configuradoPeloLink) sincronizar();
+  else mostrarStatus();
 
   setInterval(function () { enviarPendentes(); }, 2 * 60 * 1000);
   setInterval(renderFaixas, 60 * 1000); // atualiza "hoje" na virada do dia

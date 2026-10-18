@@ -204,3 +204,6 @@ tfoot td { font-weight: 800; border-top: 2px solid var(--linha); border-bottom: 
 .lista-descontos { max-height: 320px; overflow-y: auto; }
 .lista-descontos small { display: block; font-size: .78rem; color: var(--suave); }
 .acoes-desc { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+.link-acesso { display: grid; gap: 4px; justify-items: start; padding: 10px 12px; background: #f6f7f3; border-radius: 8px; }
+.link-acesso[hidden] { display: none; }

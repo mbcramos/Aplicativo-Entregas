@@ -553,6 +553,7 @@ function abrirConfig() {
   $('#c-msg').textContent = '';
   $('#c-msg').className = 'msg-config';
   $('#c-cancelar').hidden = !S.config;
+  $('#c-link').hidden = !S.config;
   if (!d.open) d.showModal();
 }
 function lerCamposConfig() {
@@ -584,6 +585,10 @@ const ACOES = {
   config: abrirConfig,
   'fechar-config': function () { $('#dlg-config').close(); },
   'testar-config': testarConfig,
+  'copiar-link': async function () {
+    const ok = await copiarTexto(linkDeAcesso(S.config));
+    msgConfig(ok ? 'Link copiado ✔ Quem abrir este link já entra no painel configurado.' : 'Não foi possível copiar.', ok);
+  },
   fechar: async function () {
     const ent = entregaAtual();
     if (!await confirmar('Fechar a entrega de ' + dataBR(ent.data_entrega) + '?\n\nO tablet deixa de aceitar lançamentos e correções nesta data. ' +
@@ -647,10 +652,38 @@ setInterval(function () {
   if (document.visibilityState === 'visible' && S.config && !document.querySelector('dialog[open]')) carregar(S.data, true);
 }, ATUALIZAR_A_CADA_MS);
 
+/* ----------------------------- link de acesso ----------------------------- */
+/** Link pronto: <site>/escritorio/#url=<endereço do script>&chave=<chave do escritório> */
+function linkDeAcesso(c) {
+  return location.origin + location.pathname + '#url=' + encodeURIComponent(c.url) + '&chave=' + encodeURIComponent(c.chave);
+}
+
+/** Lê a configuração vinda no link, salva e limpa o endereço. Devolve true se mudou. */
+async function aplicarLinkConfig() {
+  const h = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  if (!h.has('url') && !h.has('chave')) return false;
+  history.replaceState(null, '', location.pathname + location.search);
+  const c = { url: (h.get('url') || '').trim(), chave: (h.get('chave') || '').trim().toUpperCase() };
+  const erro = validarConfig(c);
+  if (erro) { toast('Link de acesso inválido. ' + erro, true, 8000); return false; }
+  if (S.config && S.config.url === c.url && S.config.chave === c.chave) return false;
+  if (S.config && !(await confirmar('Este link traz outra configuração (endereço/chave da planilha).\n\nSubstituir a configuração deste computador?', 'Substituir'))) return false;
+  S.config = c;
+  gravarConfig(c);
+  toast('Painel configurado pelo link ✔');
+  return true;
+}
+
 /* ----------------------------- início ----------------------------- */
-S.config = lerConfig();
-if (S.config) carregar();
-else {
+async function iniciar() {
+  S.config = lerConfig();
+  await aplicarLinkConfig();
+  if (S.config) { carregar(); return; }
   $('#conteudo').innerHTML = '<div class="vazio">Configure o endereço da planilha e a chave do escritório.</div>';
   abrirConfig();
 }
+iniciar();
+// link colado numa aba que já estava aberta (só muda a parte depois de #)
+window.addEventListener('hashchange', async function () {
+  if (await aplicarLinkConfig()) { S.dados = null; carregar(); }
+});
