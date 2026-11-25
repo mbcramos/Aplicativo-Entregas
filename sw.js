@@ -3,7 +3,7 @@
  * IMPORTANTE: ao alterar qualquer arquivo do app, aumente a VERSAO abaixo
  * (o tablet só baixa a nova versão quando este arquivo muda).
  */
-const VERSAO = 'pesagem-v1.9.4';
+const VERSAO = 'pesagem-v1.9.5';
 const ARQUIVOS = [
   './',
   './index.html',

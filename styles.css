@@ -473,3 +473,8 @@ button:not(:disabled), .cartao { cursor: pointer; }
 }
 
 .recebe-preco { white-space: nowrap; font-weight: 700; color: var(--texto); }
+
+/* peso equivalente do parceiro, ao lado do valor (desce de linha em telas estreitas) */
+.recebe .val { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; column-gap: 10px; }
+.recebe .val-peso { font-size: 1.35rem; font-weight: 700; color: var(--texto); white-space: nowrap; }
+.recebe .val-sep { color: var(--texto-suave); margin-right: 10px; }

@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const VERSAO_APP = '1.9.4';
+const VERSAO_APP = '1.9.5';
 const Calc = window.Calc;
 
 /* =========================================================================
@@ -944,7 +944,7 @@ function atualizarResultado() {
     const campo = $('#f-desc');
     if (campo && document.activeElement !== campo) campo.value = r.desconto_maximo > 0 ? numParaCampo(r.desconto_maximo) : '';
   }
-  let valor = fmtR(0), dica = '', erro = '';
+  let valor = fmtR(0), dica = '', erro = '', peso = '';
   if (r.erros.length) {
     erro = r.erros.map(function (x) {
       return /máximo/.test(x) ? 'O desconto passa do máximo possível (' + fmtR(r.desconto_maximo) + ').' : x;
@@ -954,13 +954,16 @@ function atualizarResultado() {
     dica = 'Digite o peso para ver o valor';
   } else {
     valor = fmtR(r.valor_parceiro);
+    // parte do parceiro em kg (peso_parceiro, peso_nome_proprietario ou peso_nome_outro, conforme a I.E.)
+    peso = fmtNum(r.peso_parte_parceiro, 1) + 'kg';
     dica = r.desconto_aplicado > 0 ? 'Já descontados os impostos e o desconto'
       : 'Já descontados os impostos (' + fmtPct(Calc.IMPOSTO_PCT) + ')';
   }
   el.classList.toggle('com-erro', !!erro);
   // linha de baixo: mensagem · preço da entrega
   const preco = 'Preço R$' + fmtNum(ent.preco_ajustado, 2) + '/kg';
-  el.innerHTML = '<div class="rot">PARCEIRO RECEBE</div><div class="val">' + valor + '</div>' +
+  el.innerHTML = '<div class="rot">PARCEIRO RECEBE</div><div class="val"><span>' + valor + '</span>' +
+    (peso ? '<span class="val-peso"><span class="val-sep">·</span>' + peso + '</span>' : '') + '</div>' +
     (erro ? '<div class="recebe-erro">' + esc(erro) + '</div>'
       : '<div class="recebe-dica">' + (dica ? esc(dica) + ' · ' : '') + '<span class="recebe-preco">' + esc(preco) + '</span></div>');
 }
@@ -1098,6 +1101,7 @@ async function gravarRegistro(reg, mensagem) {
 }
 
 function voltarParaLista() {
+  if (S.tela === 'parceiro') S.busca = ''; // volta pronta para a próxima busca
   if (history.state && history.state.tela && history.state.tela !== 'lista') {
     history.back(); // o evento popstate desenha a lista
   } else {
@@ -1579,7 +1583,10 @@ window.addEventListener('popstate', async function (ev) {
   }
   if (st.tela === 'parceiro' && st.id === S.parceiroId && S.form) S.tela = 'parceiro';
   else if (st.tela === 'config') S.tela = 'config';
-  else { S.tela = 'lista'; S.form = null; }
+  else {
+    if (S.tela === 'parceiro') S.busca = ''; // volta pronta para a próxima busca
+    S.tela = 'lista'; S.form = null;
+  }
   render();
 });
 
