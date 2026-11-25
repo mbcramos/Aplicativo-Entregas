@@ -48,7 +48,8 @@
    * e = { peso_total_kg, participacao_pct, penalidade_pct, preco_base, preco_ajustado,
    *       tem_ie ('SIM'|'NAO'|'OUTRO'), desconto_modo ('NENHUM'|'VALOR'|'MAXIMO'), desconto_informado }
    * Pesos com 1 casa decimal, valores com 2.
-   * Impostos (IMPOSTO_PCT) saem do valor bruto do parceiro, antes do desconto em R$.
+   * O desconto em R$ vira peso (desconto ÷ preço base, 0,1 kg) que passa do parceiro para o proprietário;
+   * os impostos (IMPOSTO_PCT) incidem sobre o peso que fica com o parceiro.
    */
   function calcular(e) {
     const r = {
@@ -62,6 +63,8 @@
       valor_imposto: 0,
       desconto_maximo: 0,
       desconto_aplicado: 0,
+      desconto_kg: 0,
+      peso_parte_bruta: 0,
       valor_parceiro: 0,
       valor_proprietario: 0,
       falta_peso: false,
@@ -88,16 +91,11 @@
       r.erros.push('A parte do parceiro ficou maior que o peso total. Confira os preços na planilha.');
       return r;
     }
-    r.peso_parte_parceiro = parte;
-    if (e.tem_ie === 'SIM') r.peso_parceiro = parte;
-    else if (e.tem_ie === 'NAO') r.peso_nome_proprietario = parte;
-    else r.peso_nome_outro = parte;
-    r.peso_proprietario = arred(peso - parte, 1);
-
+    // parte antes do desconto
+    r.peso_parte_bruta = parte;
     r.valor_bruto_parceiro = arred(parte * base, 2);
-    r.valor_imposto = arred(r.valor_bruto_parceiro * IMPOSTO_PCT / 100, 2);
-    // desconto máximo: o que sobra depois dos impostos (o parceiro fica com R$ 0,00)
-    r.desconto_maximo = arred(r.valor_bruto_parceiro - r.valor_imposto, 2);
+    // desconto máximo: toda a parte do parceiro (ele fica com 0 kg e R$ 0,00)
+    r.desconto_maximo = r.valor_bruto_parceiro;
 
     let desc = 0;
     if (e.desconto_modo === 'MAXIMO') desc = r.desconto_maximo;
@@ -106,9 +104,25 @@
     if (desc > r.desconto_maximo) {
       r.erros.push('O desconto é maior que o máximo possível.');
     }
-    r.desconto_aplicado = Math.min(desc, r.desconto_maximo);
-    r.valor_parceiro = arred(r.valor_bruto_parceiro - r.valor_imposto - r.desconto_aplicado, 2);
-    // = peso_proprietario × preco_base + desconto, calculado pelo total para fechar no centavo
+    desc = Math.min(desc, r.desconto_maximo);
+    // O desconto em R$ vira peso (ao preço base) e passa do parceiro para o proprietário.
+    // Pesos têm 1 casa decimal: o desconto é levado ao 0,1 kg mais próximo.
+    r.desconto_kg = Math.min(arred(desc / base, 1), parte);
+    r.desconto_informado = desc;
+    r.desconto_aplicado = arred(r.desconto_kg * base, 2);
+
+    const final = arred(parte - r.desconto_kg, 1);
+    r.peso_parte_parceiro = final;
+    if (e.tem_ie === 'SIM') r.peso_parceiro = final;
+    else if (e.tem_ie === 'NAO') r.peso_nome_proprietario = final;
+    else r.peso_nome_outro = final;
+    r.peso_proprietario = arred(peso - final, 1);
+
+    // impostos sobre o que fica com o parceiro: valor_parceiro = peso final × preço base − 1,5%
+    const bruto_final = arred(final * base, 2);
+    r.valor_parceiro = arred(bruto_final * (1 - IMPOSTO_PCT / 100), 2);
+    r.valor_imposto = arred(bruto_final - r.valor_parceiro, 2);
+    // = peso_proprietario × preco_base, calculado pelo total para fechar no centavo
     // (valor_parceiro + valor_proprietario + valor_imposto = peso_total_kg × preco_base)
     r.valor_proprietario = arred(arred(peso * base, 2) - r.valor_parceiro - r.valor_imposto, 2);
     return r;

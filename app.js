@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const VERSAO_APP = '1.9.5';
+const VERSAO_APP = '2.0.0';
 const Calc = window.Calc;
 
 /* =========================================================================
@@ -958,6 +958,10 @@ function atualizarResultado() {
     peso = fmtNum(r.peso_parte_parceiro, 1) + 'kg';
     dica = r.desconto_aplicado > 0 ? 'Já descontados os impostos e o desconto'
       : 'Já descontados os impostos (' + fmtPct(Calc.IMPOSTO_PCT) + ')';
+    // o desconto vira peso com 1 casa decimal: avisa quando o valor aplicado difere do digitado
+    if (S.form.modo !== 'MAXIMO' && Math.abs(r.desconto_aplicado - r.desconto_informado) >= 0.005) {
+      dica = 'Desconto ajustado para ' + fmtR(r.desconto_aplicado) + ' (' + fmtNum(r.desconto_kg, 1) + 'kg)';
+    }
   }
   el.classList.toggle('com-erro', !!erro);
   // linha de baixo: mensagem · preço da entrega
