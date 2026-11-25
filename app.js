@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const VERSAO_APP = '1.8.0';
+const VERSAO_APP = '1.9.3';
 const Calc = window.Calc;
 
 /* =========================================================================
@@ -55,6 +55,8 @@ const S = {
   data: null,          // data de entrega selecionada (yyyy-mm-dd)
   ultimoEnvio: null,
   motoristasHist: [],  // [{ nome, ultima_data }] motoristas já usados (qualquer data)
+  taras: {},           // { 'aaaa-mm-dd': { caixa, pallet, bag } } pesos de caixa/pallet/bag de cada entrega
+  tarasPadrao: {},     // últimos valores usados (sugestão para a próxima entrega)
   // só em memória
   tela: 'lista',
   parceiroId: null,
@@ -72,7 +74,7 @@ async function salvarEstado() {
   try {
     await DB.set('estado', {
       dados: S.dados, lanc: S.lanc, inativacoes: S.inativacoes, data: S.data, ultimoEnvio: S.ultimoEnvio,
-      motoristasHist: S.motoristasHist,
+      motoristasHist: S.motoristasHist, taras: S.taras, tarasPadrao: S.tarasPadrao,
     });
   } catch (e) {
     aviso('ERRO ao salvar no tablet! ' + (e && e.message ? e.message : ''), 8000);
@@ -122,6 +124,12 @@ function numParaCampo(n) {
   return String(n).replace('.', ',');
 }
 function chave(data, id) { return data + '|' + id; }
+const ICONE_CALC = '<svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true" focusable="false">' +
+  '<rect x="4.5" y="2" width="15" height="20" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/>' +
+  '<rect x="7.5" y="5" width="9" height="4" rx=".8" fill="currentColor"/>' +
+  [[9, 12.5], [12, 12.5], [15, 12.5], [9, 15.8], [12, 15.8], [15, 15.8], [9, 19], [12, 19], [15, 19]].map(function (c) {
+    return '<circle cx="' + c[0] + '" cy="' + c[1] + '" r="1.15" fill="currentColor"/>';
+  }).join('') + '</svg>';
 const SETA_VOLTAR = '<svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" focusable="false">' +
   '<path d="M20 12H5M11 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function semAcento(s) {
@@ -293,6 +301,9 @@ function renderFaixas() {
  * Data da entrega no cabeçalho. Tela principal: lista para escolher se houver mais de uma entrega aberta
  * (quase sempre há só uma, então aparece só a data). Tela do parceiro: data fixa.
  */
+const TELA_PEQUENA = window.matchMedia('(max-width: 600px)');
+if (TELA_PEQUENA.addEventListener) TELA_PEQUENA.addEventListener('change', function () { renderTopoData(); });
+
 function renderTopoData() {
   const el = $('#topo-data');
   if (!el) return;
@@ -300,13 +311,14 @@ function renderTopoData() {
   if (!ent || S.tela === 'config') { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   const ents = S.dados.entregas;
-  const chaveAtual = S.tela + '|' + ent.data_entrega + '|' + ents.map(function (e) { return e.data_entrega; }).join(',');
+  const curta = TELA_PEQUENA.matches; // celular: data sem o ano
+  const chaveAtual = S.tela + '|' + ent.data_entrega + '|' + curta + '|' + ents.map(function (e) { return e.data_entrega; }).join(',');
   if (el.dataset.chave === chaveAtual) return; // nada mudou: não redesenha (não fecha a lista aberta)
   el.dataset.chave = chaveAtual;
   if (S.tela === 'lista' && ents.length > 1) {
     el.innerHTML = '<select id="sel-data" class="sel-data" aria-label="Entrega">' + ents.map(function (e) {
       return '<option value="' + e.data_entrega + '"' + (e.data_entrega === ent.data_entrega ? ' selected' : '') + '>' +
-        fmtData(e.data_entrega) + '</option>';
+        (curta ? fmtData(e.data_entrega).slice(0, 5) : fmtData(e.data_entrega)) + '</option>';
     }).join('') + '</select>';
   } else {
     const d = fmtData(ent.data_entrega); // dd/mm/aaaa — em telas estreitas o ano some
@@ -372,7 +384,7 @@ function renderLista() {
   });
   const faltam = ps.length - pesados - naoEntregou;
 
-  let html = '<div class="preco-dia">Preço <b>' + fmtR(ent.preco_ajustado) + '</b></div>';
+  let html = '';
   if (ent.observacoes) html += '<div class="obs-fixa">' + esc(ent.observacoes) + '</div>';
   html += '<div class="resumo-dia">' +
     '<div><b>' + pesados + '</b><span>Pesados</span></div>' +
@@ -512,6 +524,7 @@ function abrirParceiro(id) {
     desc: r && r.desconto_modo === 'VALOR' ? numParaCampo(r.desconto_informado) : '',
     obs: r ? (r.observacoes || '') : '',
     motorista: r && r.situacao === 'ENTREGOU' ? normalizarNome(r.motorista) : '',
+    calc: { itens: r && r.situacao === 'ENTREGOU' && Array.isArray(r._calc) ? r._calc.slice() : [], editando: null, editTara: null },
     alterado: false,
   };
   S.tela = 'parceiro';
@@ -552,7 +565,8 @@ function renderParceiro() {
     '<div class="form-unica">' +
 
     '<div class="campo"><label for="f-peso">Peso total</label>' +
-    '<div class="com-unidade"><input id="f-peso" class="entrada" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0" value="' + esc(f.peso) + '"><span class="unidade">kg</span></div>' +
+    '<div class="com-unidade"><input id="f-peso" class="entrada" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0" value="' + esc(f.peso) + '"><span class="unidade">kg</span>' +
+    '<button class="btn btn-calc" data-acao="calc-abrir" aria-label="Calcular peso líquido" title="Calcular peso líquido">' + ICONE_CALC + '</button></div>' +
     '<div class="erro-campo" id="e-peso"></div></div>' +
 
     '<div class="campo"><span class="rotulo">Motorista (caminhão)</span>' +
@@ -610,6 +624,190 @@ function renderMotoristas() {
     return '<button class="btn' + (ativo ? ' ativo' : '') + '" data-acao="mot" data-valor="' + esc(m) + '">🚚 ' + esc(m) + '</button>';
   }).join('') +
     '<button class="btn mot-mais" data-acao="mot-novo">' + (lista.length ? '+ Outro motorista' : '+ Escolher motorista') + '</button>';
+}
+
+/* =========================================================================
+ * Calculadora de peso líquido (Pallets e Bags)
+ *   Pallet: Pesagem − nº Caixas × Peso Caixa − Peso Pallet
+ *   Bag:    Pesagem − Peso Bag
+ * Os pesos de caixa/pallet/bag ficam guardados no tablet para cada data de entrega.
+ * ========================================================================= */
+const TARAS = {
+  caixa: { rot: 'Peso Caixa', campo: 'caixaT' },
+  pallet: { rot: 'Peso Pallet', campo: 'palletT' },
+  bag: { rot: 'Peso Bag', campo: 'bagT' },
+};
+function tarasDoDia() { return (S.taras && S.taras[S.data]) || {}; }
+function definirTara(nome, valor) {
+  S.taras[S.data] = Object.assign({}, S.taras[S.data]);
+  S.taras[S.data][nome] = valor;
+  S.tarasPadrao = Object.assign({}, S.tarasPadrao);
+  S.tarasPadrao[nome] = valor;
+  salvarEstado().catch(function () {});
+}
+function liquidoItem(it, t) {
+  if (it.tipo === 'PALLET') return Calc.arred(it.pesagem - it.caixas * t.caixa - t.pallet, 1);
+  return Calc.arred(it.pesagem - t.bag, 1);
+}
+function totalCalc() {
+  const t = tarasDoDia();
+  return Calc.arred(S.form.calc.itens.reduce(function (s, it) { return s + liquidoItem(it, t); }, 0), 1);
+}
+function fmtKgCalc(n) { return fmtNum(n, 1) + ' kg'; }
+function fmtTara(n) {
+  return n === undefined || n === null ? '—' : Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2, useGrouping: false }) + ' kg';
+}
+
+function abrirCalc() {
+  S.form.calc.editando = null;
+  S.form.calc.editTara = null;
+  renderCalc();
+  $('#modal-calc').hidden = false;
+  history.pushState({ tela: 'parceiro', id: S.parceiroId, modal: 'calc' }, '');
+}
+function fecharCalc() {
+  $('#modal-calc').hidden = true;
+  if (history.state && history.state.modal === 'calc') history.back();
+}
+
+/** Campos do formulário de um Pallet/Bag (inclui as taras que ainda não foram definidas nesta data). */
+function camposDoItem(tipo) {
+  const t = tarasDoDia();
+  const lista = tipo === 'PALLET' ? ['caixas', 'pesagem'] : ['pesagem'];
+  const taras = tipo === 'PALLET' ? ['caixa', 'pallet'] : ['bag'];
+  if (S.form.calc.editando && S.form.calc.editando.idx < 0 && taras.some(function (n) { return t[n] === undefined; })) {
+    taras.forEach(function (n) { lista.push(TARAS[n].campo); });
+  }
+  return lista;
+}
+const ROTULO_CAMPO = { caixas: 'nº Caixas', pesagem: 'Pesagem', caixaT: 'Peso Caixa', palletT: 'Peso Pallet', bagT: 'Peso Bag' };
+
+/** Lê o formulário aberto: valores, erros e o peso líquido. */
+function lerItemCalc() {
+  const ed = S.form.calc.editando;
+  const t = Object.assign({}, tarasDoDia());
+  const v = {}, erros = {};
+  camposDoItem(ed.tipo).forEach(function (c) {
+    const casas = c === 'caixas' ? 0 : c === 'pesagem' ? 1 : 2;
+    const l = Calc.lerNumero(ed.campos[c], casas);
+    if (!l.ok) erros[c] = l.erro;
+    else if (l.vazio) erros[c] = 'Preencha ' + ROTULO_CAMPO[c] + '.';
+    else if (c === 'pesagem' && !(l.valor > 0)) erros[c] = 'A pesagem deve ser maior que zero.';
+    else v[c] = l.valor;
+  });
+  if (v.caixaT !== undefined) t.caixa = v.caixaT;
+  if (v.palletT !== undefined) t.pallet = v.palletT;
+  if (v.bagT !== undefined) t.bag = v.bagT;
+  let liquido = null, erroGeral = '';
+  if (!Object.keys(erros).length) {
+    const it = ed.tipo === 'PALLET' ? { tipo: 'PALLET', caixas: v.caixas, pesagem: v.pesagem } : { tipo: 'BAG', pesagem: v.pesagem };
+    liquido = liquidoItem(it, t);
+    if (!(liquido > 0)) erroGeral = 'O peso líquido ficou zero ou negativo. Confira os valores.';
+  }
+  return { v: v, t: t, erros: erros, liquido: liquido, erroGeral: erroGeral };
+}
+
+function renderCalc() {
+  const c = S.form.calc;
+  const t = tarasDoDia();
+  const ed = c.editando;
+  let h = '<div class="modal-titulo">Calcular peso líquido</div>';
+
+  // pesos de caixa, pallet e bag desta entrega, cada um com botão de editar
+  h += '<div class="taras">' + Object.keys(TARAS).map(function (n) {
+    if (c.editTara === n) {
+      return '<div class="tara editando"><span>' + TARAS[n].rot + '</span>' +
+        '<input id="ct-valor" class="entrada entrada-tara" type="text" inputmode="decimal" autocomplete="off" value="' +
+        esc(t[n] !== undefined ? numParaCampo(t[n]) : numParaCampo(S.tarasPadrao[n])) + '"><span class="unidade-p">kg</span>' +
+        '<button class="btn btn-verde btn-p" data-acao="calc-tara-ok" data-tara="' + n + '">OK</button>' +
+        '<button class="btn btn-cinza btn-p" data-acao="calc-tara-cancelar">✕</button></div>';
+    }
+    return '<div class="tara"><span>' + TARAS[n].rot + ': <b>' + fmtTara(t[n]) + '</b></span>' +
+      '<button class="btn btn-editar" data-acao="calc-tara-editar" data-tara="' + n + '" aria-label="Editar ' + TARAS[n].rot + '">✎</button></div>';
+  }).join('') + '</div>' +
+  '<div class="erro-tara" id="ct-erro"></div>';
+
+  // lista dos pallets e bags já confirmados
+  let nP = 0, nB = 0;
+  h += '<div class="itens-calc">' + (c.itens.length ? c.itens.map(function (it, i) {
+    const num = it.tipo === 'PALLET' ? ++nP : ++nB;
+    const desc = it.tipo === 'PALLET'
+      ? it.caixas + ' cx · pesagem ' + fmtKgCalc(it.pesagem)
+      : 'pesagem ' + fmtKgCalc(it.pesagem);
+    return '<button class="item-calc' + (ed && ed.idx === i ? ' ativo' : '') + '" data-acao="calc-editar" data-idx="' + i + '">' +
+      '<span class="ic-nome">' + (it.tipo === 'PALLET' ? 'Pallet ' : 'Bag ') + num + '</span>' +
+      '<span class="ic-desc">' + desc + '</span>' +
+      '<span class="ic-liq">' + fmtKgCalc(liquidoItem(it, t)) + '</span><span class="ic-edit">✎</span></button>';
+  }).join('') : '<div class="calc-vazio">Adicione os pallets e bags desta entrega.</div>') + '</div>';
+
+  // formulário do pallet/bag sendo adicionado ou editado
+  if (ed) {
+    const nome = ed.tipo === 'PALLET' ? 'Pallet' : 'Bag';
+    h += '<div class="form-item">' +
+      '<div class="fi-titulo">' + (ed.idx < 0 ? 'Novo ' : 'Editar ') + nome + '</div>' +
+      '<div class="fi-campos">' + camposDoItem(ed.tipo).map(function (cp) {
+        const tara = /T$/.test(cp);
+        return '<label class="fi-campo' + (tara ? ' fi-tara' : '') + '"><span>' + ROTULO_CAMPO[cp] + (tara ? ' <small>(vale para toda a entrega)</small>' : '') + '</span>' +
+          '<input id="cf-' + cp + '" class="entrada entrada-calc" type="text" inputmode="' + (cp === 'caixas' ? 'numeric' : 'decimal') + '"' +
+          ' autocomplete="off" enterkeyhint="next" value="' + esc(ed.campos[cp] || '') + '">' +
+          '<span class="fi-erro" id="cfe-' + cp + '"></span></label>';
+      }).join('') + '</div>' +
+      '<div class="fi-liq" id="cf-liq"></div>' +
+      '<div class="fi-botoes">' +
+      '<button class="btn btn-grande btn-verde" data-acao="calc-confirmar">✔ Confirmar ' + nome + '</button>' +
+      (ed.idx >= 0 ? '<button class="btn btn-grande btn-vermelho" data-acao="calc-excluir">Excluir</button>' : '') +
+      '<button class="btn btn-grande btn-cinza" data-acao="calc-cancelar-item">Cancelar</button>' +
+      '</div></div>';
+  } else {
+    h += '<div class="botoes-add">' +
+      '<button class="btn btn-grande btn-contorno" data-acao="calc-add" data-tipo="PALLET">+ Pallet</button>' +
+      '<button class="btn btn-grande btn-contorno" data-acao="calc-add" data-tipo="BAG">+ Bag</button></div>';
+  }
+
+  // total e conclusão
+  h += '<div class="calc-total"><span>Peso líquido total</span><b>' + fmtKgCalc(totalCalc()) + '</b></div>' +
+    '<div class="fi-botoes">' +
+    '<button class="btn btn-grande btn-verde" data-acao="calc-concluir"' + (!c.itens.length || ed ? ' disabled' : '') + '>Usar no Peso Total</button>' +
+    '<button class="btn btn-grande btn-cinza" data-acao="calc-fechar">Fechar</button></div>' +
+    (ed ? '<div class="calc-aviso">Confirme ou cancele o ' + (ed.tipo === 'PALLET' ? 'pallet' : 'bag') + ' aberto para concluir.</div>' : '');
+
+  $('#modal-calc-caixa').innerHTML = h;
+  if (ed) atualizarItemCalc(false);
+}
+
+/** Atualiza o peso líquido do formulário enquanto digita. */
+function atualizarItemCalc(mostrarErros) {
+  const ed = S.form.calc.editando;
+  if (!ed) return;
+  const r = lerItemCalc();
+  camposDoItem(ed.tipo).forEach(function (cp) {
+    const e = $('#cfe-' + cp);
+    const vazio = !String(ed.campos[cp] || '').trim();
+    const msg = r.erros[cp] && (mostrarErros || !vazio) ? r.erros[cp] : '';
+    if (e) e.textContent = msg;
+    const inp = $('#cf-' + cp);
+    if (inp) inp.classList.toggle('invalida', !!msg);
+  });
+  const el = $('#cf-liq');
+  if (r.erroGeral) { el.className = 'fi-liq erro'; el.textContent = r.erroGeral; }
+  else if (r.liquido !== null) { el.className = 'fi-liq'; el.innerHTML = 'Peso líquido: <b>' + fmtKgCalc(r.liquido) + '</b>'; }
+  else { el.className = 'fi-liq vazio'; el.textContent = 'Preencha os campos para ver o peso líquido.'; }
+  return r;
+}
+
+function confirmarItemCalc() {
+  const c = S.form.calc, ed = c.editando;
+  const r = atualizarItemCalc(true);
+  if (Object.keys(r.erros).length || r.erroGeral || r.liquido === null) return;
+  // taras pedidas no primeiro pallet/bag da entrega ficam guardadas para os próximos
+  if (r.v.caixaT !== undefined) definirTara('caixa', r.v.caixaT);
+  if (r.v.palletT !== undefined) definirTara('pallet', r.v.palletT);
+  if (r.v.bagT !== undefined) definirTara('bag', r.v.bagT);
+  const it = ed.tipo === 'PALLET' ? { tipo: 'PALLET', caixas: r.v.caixas, pesagem: r.v.pesagem } : { tipo: 'BAG', pesagem: r.v.pesagem };
+  if (ed.idx >= 0) c.itens[ed.idx] = it; else c.itens.push(it);
+  c.editando = null;
+  S.form.alterado = true;
+  renderCalc();
 }
 
 /* ---- janela "Outro motorista": digitar ou escolher um dos já usados (mais recentes primeiro) ---- */
@@ -760,8 +958,11 @@ function atualizarResultado() {
       : 'Já descontados os impostos (' + fmtPct(Calc.IMPOSTO_PCT) + ')';
   }
   el.classList.toggle('com-erro', !!erro);
+  // linha de baixo: mensagem · preço da entrega
+  const preco = 'Preço R$' + fmtNum(ent.preco_ajustado, 2) + '/kg';
   el.innerHTML = '<div class="rot">PARCEIRO RECEBE</div><div class="val">' + valor + '</div>' +
-    '<div class="' + (erro ? 'recebe-erro' : 'recebe-dica') + '">' + esc(erro || dica || ' ') + '</div>';
+    (erro ? '<div class="recebe-erro">' + esc(erro) + '</div>'
+      : '<div class="recebe-dica">' + (dica ? esc(dica) + ' · ' : '') + '<span class="recebe-preco">' + esc(preco) + '</span></div>');
 }
 
 
@@ -843,6 +1044,7 @@ async function salvarEntrega() {
     desconto_informado: informado,
     motorista: motorista,
   });
+  if (S.form.calc && S.form.calc.itens.length) reg._calc = S.form.calc.itens.slice();
   await gravarRegistro(reg, 'Salvo ✔ ' + nomeExibicao(p));
 }
 
@@ -1187,7 +1389,8 @@ function aplicarDownload(d) {
     const k = chave(rs.data_entrega, rs.id_parceiro);
     const loc = S.lanc[k];
     if (!loc || !loc._pendente) {
-      S.lanc[k] = Object.assign({}, rs, { _pendente: false, _erro: null, _enviado_em: rs.atualizado_em });
+      const calc = loc && loc._calc && loc.atualizado_em === rs.atualizado_em ? loc._calc : undefined;
+      S.lanc[k] = Object.assign({}, rs, { _pendente: false, _erro: null, _enviado_em: rs.atualizado_em, _calc: calc });
     }
   });
   // Descarta lançamentos já enviados de entregas que não estão mais abertas
@@ -1228,6 +1431,63 @@ const ACOES = {
   'mm-escolher': function (el) { fecharModalMot(el.dataset.valor); },
   'mm-usar': usarNomeDigitado,
   'mm-cancelar': function () { fecharModalMot(null); },
+  'calc-abrir': abrirCalc,
+  'calc-fechar': fecharCalc,
+  'calc-add': function (el) {
+    const tipo = el.dataset.tipo;
+    const campos = {};
+    const t = tarasDoDia();
+    // primeiro da entrega: taras já vêm preenchidas com os últimos valores usados
+    ['caixa', 'pallet', 'bag'].forEach(function (n) {
+      const v = t[n] !== undefined ? t[n] : S.tarasPadrao[n];
+      if (v !== undefined) campos[TARAS[n].campo] = numParaCampo(v);
+    });
+    S.form.calc.editando = { idx: -1, tipo: tipo, campos: campos };
+    S.form.calc.editTara = null;
+    renderCalc();
+    const primeiro = document.querySelector('#modal-calc .entrada-calc');
+    if (primeiro) primeiro.focus();
+  },
+  'calc-editar': function (el) {
+    const idx = Number(el.dataset.idx);
+    const it = S.form.calc.itens[idx];
+    S.form.calc.editando = { idx: idx, tipo: it.tipo, campos: { caixas: it.caixas !== undefined ? String(it.caixas) : '', pesagem: numParaCampo(it.pesagem) } };
+    S.form.calc.editTara = null;
+    renderCalc();
+  },
+  'calc-confirmar': confirmarItemCalc,
+  'calc-cancelar-item': function () { S.form.calc.editando = null; renderCalc(); },
+  'calc-excluir': async function () {
+    const c = S.form.calc, idx = c.editando.idx;
+    $('#modal-calc').hidden = true;
+    const ok = await confirmar('Excluir este ' + (c.itens[idx].tipo === 'PALLET' ? 'pallet' : 'bag') + '?', 'Excluir', 'btn-vermelho');
+    $('#modal-calc').hidden = false;
+    if (!ok) return;
+    c.itens.splice(idx, 1);
+    c.editando = null;
+    S.form.alterado = true;
+    renderCalc();
+  },
+  'calc-tara-editar': function (el) { S.form.calc.editTara = el.dataset.tara; renderCalc(); $('#ct-valor').focus(); $('#ct-valor').select(); },
+  'calc-tara-cancelar': function () { S.form.calc.editTara = null; renderCalc(); },
+  'calc-tara-ok': function (el) {
+    const l = Calc.lerNumero($('#ct-valor').value, 2);
+    if (!l.ok || l.vazio) { $('#ct-erro').textContent = l.ok ? 'Digite o peso.' : l.erro; return; }
+    definirTara(el.dataset.tara, l.valor);
+    S.form.calc.editTara = null;
+    renderCalc();
+  },
+  'calc-concluir': function () {
+    const total = totalCalc();
+    if (!(total > 0)) { aviso('O peso líquido total deve ser maior que zero.', 3500); return; }
+    S.form.peso = numParaCampo(total);
+    S.form.alterado = true;
+    $('#f-peso').value = S.form.peso;
+    fecharCalc();
+    atualizarBotoesForm();
+    atualizarResultado();
+    aviso('Peso total: ' + fmtKgCalc(total), 2500);
+  },
   'salvar': salvarEntrega,
   'nao-entregou': marcarNaoEntregou,
   'nao-entregou-fazenda': function (el) { marcarFazendaNaoEntregou(el.dataset.fazenda); },
@@ -1266,6 +1526,12 @@ document.addEventListener('input', function (ev) {
   if (id === 'busca') { S.busca = ev.target.value; renderGradeLista(); return; }
   if (!S.form) return;
   if (id === 'mm-nome') { $('#mm-erro').textContent = ''; renderListaModalMot(); return; }
+  if (id.indexOf('cf-') === 0 && S.form && S.form.calc.editando) {
+    S.form.calc.editando.campos[id.slice(3)] = ev.target.value;
+    atualizarItemCalc(false);
+    return;
+  }
+  if (id === 'ct-valor') { $('#ct-erro').textContent = ''; return; }
   const mapa = { 'f-peso': 'peso', 'f-desc': 'desc', 'f-obs': 'obs' };
   if (!mapa[id]) return;
   S.form[mapa[id]] = ev.target.value;
@@ -1281,6 +1547,15 @@ document.addEventListener('input', function (ev) {
 // "Enter" no teclado numérico fecha o teclado para mostrar o resultado
 document.addEventListener('keydown', function (ev) {
   if (ev.key === 'Enter' && ev.target.id === 'mm-nome') { ev.preventDefault(); usarNomeDigitado(); return; }
+  if (ev.key === 'Enter' && ev.target.classList && ev.target.classList.contains('entrada-calc')) {
+    ev.preventDefault();
+    const campos = Array.prototype.slice.call(document.querySelectorAll('#modal-calc .entrada-calc'));
+    const i = campos.indexOf(ev.target);
+    if (i >= 0 && i < campos.length - 1) campos[i + 1].focus();
+    else { ev.target.blur(); confirmarItemCalc(); }
+    return;
+  }
+  if (ev.key === 'Enter' && ev.target.id === 'ct-valor') { ev.preventDefault(); const b = document.querySelector('[data-acao="calc-tara-ok"]'); if (b) b.click(); return; }
   if (ev.key === 'Enter' && ev.target.matches && ev.target.matches('input.entrada')) {
     ev.preventDefault();
     ev.target.blur();
@@ -1292,6 +1567,7 @@ window.addEventListener('popstate', async function (ev) {
   const st = ev.state || { tela: 'lista' };
   if (!$('#modal').hidden) { $('#modal-nao').click(); }
   if (!$('#modal-mot').hidden) $('#modal-mot').hidden = true; // "voltar" fecha a janela do motorista
+  if (!$('#modal-calc').hidden) $('#modal-calc').hidden = true; // ... e a calculadora (os itens ficam guardados)
   // continua na mesma tela do parceiro (ex.: janela do motorista fechada): nada a redesenhar
   if (S.tela === 'parceiro' && st.tela === 'parceiro' && st.id === S.parceiroId && S.form) return;
   if (S.tela === 'parceiro' && S.form && S.form.alterado && st.tela !== 'parceiro') {
@@ -1365,6 +1641,8 @@ async function iniciar() {
       S.data = e.data || null;
       S.ultimoEnvio = e.ultimoEnvio || null;
       S.motoristasHist = e.motoristasHist || [];
+      S.taras = e.taras || {};
+      S.tarasPadrao = e.tarasPadrao || {};
     }
   } catch (err) {
     aviso('Não foi possível ler os dados do tablet: ' + (err && err.message ? err.message : err), 10000);
