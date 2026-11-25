@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const VERSAO_APP = '1.9.3';
+const VERSAO_APP = '1.9.4';
 const Calc = window.Calc;
 
 /* =========================================================================
@@ -556,8 +556,8 @@ function renderParceiro() {
     '<div class="cab-parceiro">' +
     '<button class="btn btn-voltar" data-acao="voltar" aria-label="Voltar">' + SETA_VOLTAR + '</button>' +
     '<div class="nomes"><div class="linha-nome"><h1>' + esc(nomeExibicao(p)) + '</h1>' +
-    '<span class="etiqueta">Participação ' + fmtPct(p.participacao_pct) + '</span>' +
-    '<span class="etiqueta">I.E.: ' + textoIE(p.tem_ie) + '</span></div>' +
+    '<span class="etiqueta">I.E.: ' + textoIE(p.tem_ie) + '</span>' +
+    '<span class="etiqueta" title="Participação">Part. ' + fmtPct(p.participacao_pct) + '</span></div>' +
     (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') +
     '</div></div>' +
     (p.observacoes ? '<div class="obs-fixa">📝 ' + esc(p.observacoes) + '</div>' : '') +
