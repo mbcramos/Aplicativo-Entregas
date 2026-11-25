@@ -347,7 +347,15 @@ button:not(:disabled), .cartao { cursor: pointer; }
 .botoes-desc [data-acao="desc-zerar"] { color: var(--vermelho); border-color: #e5b3ae; }
 .botoes-desc .btn-desc-max { color: var(--verde); border-color: #9fc7ad; }
 .botoes-desc .btn-desc-max.ativo { background: var(--verde); border-color: var(--verde); color: #fff; }
-@media (max-width: 420px) { .botoes-desc button { font-size: .9rem; } }
+.botoes-desc .so-estreito { display: none; }
+/* telas pequenas (celular): botões sem "R$", "Máx." e letra menor */
+@media (max-width: 600px) {
+  .botoes-desc { gap: 6px; }
+  .botoes-desc button { font-size: .95rem; padding: 0 2px; }
+  .botoes-desc .so-largo { display: none; }
+  .botoes-desc .so-estreito { display: inline; }
+}
+@media (max-width: 380px) { .botoes-desc button { font-size: .85rem; } }
 
 /* ---------- janela "Outro motorista" ---------- */
 .modal-mot { display: grid; gap: 12px; max-height: calc(100vh - 32px); overflow-y: auto; }
@@ -361,3 +369,46 @@ button:not(:disabled), .cartao { cursor: pointer; }
 .mm-rotulo[hidden] { display: none; }
 .mm-lista { max-height: 45vh; overflow-y: auto; }
 .mm-vazio { color: var(--texto-suave); padding: 6px 0; }
+
+/* campos com unidade (kg, R$) podem encolher em telas estreitas */
+.com-unidade .entrada { min-width: 0; flex: 1 1 auto; }
+.form-unica { grid-template-columns: minmax(0, 1fr); }
+.botoes-rapidos button { min-width: 0; padding: 0 4px; }
+@media (max-width: 600px) {
+  .botoes-rapidos { gap: 6px; }
+  .botoes-rapidos button { font-size: 1.1rem; }
+}
+
+/* ---------- data da entrega no cabeçalho ---------- */
+.topo { justify-content: flex-start; }
+.topo-acoes { margin-left: auto; }
+.topo-data { min-width: 0; }
+.topo-data[hidden] { display: none; }
+.data-fixa {
+  display: inline-block; padding: 6px 12px; border-radius: 999px; white-space: nowrap;
+  background: rgba(255,255,255,.18); color: #fff; font-weight: 700; font-size: 1rem;
+}
+.sel-data {
+  min-height: 44px; padding: 0 8px; border-radius: 10px; border: none; cursor: pointer;
+  background: #fff; color: var(--verde); font-weight: 800; font-size: 1rem; max-width: 100%;
+}
+.preco-dia { font-size: 1.05rem; color: var(--texto-suave); margin: 0 2px 12px; }
+.preco-dia b { color: var(--texto); }
+@media (max-width: 520px) {
+  .topo { gap: 8px; padding-left: 12px; }
+  .txt-sync { display: none; }
+  .btn-topo { padding: 0 14px; font-size: 1.1rem; }
+  .data-fixa { padding: 5px 10px; font-size: .95rem; }
+}
+
+/* ---------- nome do parceiro com as etiquetas ao lado ---------- */
+.linha-nome { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.linha-nome h1 { flex: 0 1 auto; margin-right: 4px; }
+.linha-nome .etiqueta { flex-shrink: 0; }
+@media (max-width: 420px) {
+  .data-fixa .ano { display: none; }
+  .sel-data { font-size: .9rem; padding: 0 4px; min-height: 40px; }
+  .status-sync { min-width: 48px; padding: 0 10px; }
+  .linha-nome { gap: 5px 6px; }
+  .linha-nome .etiqueta { font-size: .8rem; padding: 3px 9px; }
+}

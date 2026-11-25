@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const VERSAO_APP = '1.7.0';
+const VERSAO_APP = '1.8.0';
 const Calc = window.Calc;
 
 /* =========================================================================
@@ -283,9 +283,35 @@ function renderFaixas() {
   el.hidden = !naLista;
   $('#btn-sync').hidden = !naLista;
   $('#btn-sync').disabled = S.sincronizando;
+  renderTopoData();
   $('#faixa-atualizacao').hidden = !(naLista && S.atualizacaoDisponivel);
   if (!naLista) esconderStatus();
   else if (!$('#faixa-status').hidden) preencherFaixaStatus(e); // atualiza o texto se estiver aberta
+}
+
+/**
+ * Data da entrega no cabeçalho. Tela principal: lista para escolher se houver mais de uma entrega aberta
+ * (quase sempre há só uma, então aparece só a data). Tela do parceiro: data fixa.
+ */
+function renderTopoData() {
+  const el = $('#topo-data');
+  if (!el) return;
+  const ent = entregaAtual();
+  if (!ent || S.tela === 'config') { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  const ents = S.dados.entregas;
+  const chaveAtual = S.tela + '|' + ent.data_entrega + '|' + ents.map(function (e) { return e.data_entrega; }).join(',');
+  if (el.dataset.chave === chaveAtual) return; // nada mudou: não redesenha (não fecha a lista aberta)
+  el.dataset.chave = chaveAtual;
+  if (S.tela === 'lista' && ents.length > 1) {
+    el.innerHTML = '<select id="sel-data" class="sel-data" aria-label="Entrega">' + ents.map(function (e) {
+      return '<option value="' + e.data_entrega + '"' + (e.data_entrega === ent.data_entrega ? ' selected' : '') + '>' +
+        fmtData(e.data_entrega) + '</option>';
+    }).join('') + '</select>';
+  } else {
+    const d = fmtData(ent.data_entrega); // dd/mm/aaaa — em telas estreitas o ano some
+    el.innerHTML = '<span class="data-fixa" title="Data da entrega">' + d.slice(0, 5) + '<span class="ano">' + d.slice(5) + '</span></span>';
+  }
 }
 
 let temporizadorFaixa = null;
@@ -346,16 +372,7 @@ function renderLista() {
   });
   const faltam = ps.length - pesados - naoEntregou;
 
-  let html = '';
-  if (S.dados.entregas.length > 1) {
-    html += '<div class="linha-datas"><span class="rotulo">Entrega:</span>' +
-      S.dados.entregas.map(function (e) {
-        return '<button class="btn chip-data' + (e.data_entrega === S.data ? ' ativo' : '') +
-          '" data-acao="data" data-valor="' + e.data_entrega + '">' + fmtData(e.data_entrega) + '</button>';
-      }).join('') + '</div>';
-  }
-  html += '<h1 class="titulo-tela">Entrega de ' + fmtData(ent.data_entrega) +
-    ' <small style="font-weight:500;color:var(--texto-suave);font-size:.8em">· preço ' + fmtR(ent.preco_ajustado) + '</small></h1>';
+  let html = '<div class="preco-dia">Preço <b>' + fmtR(ent.preco_ajustado) + '</b></div>';
   if (ent.observacoes) html += '<div class="obs-fixa">' + esc(ent.observacoes) + '</div>';
   html += '<div class="resumo-dia">' +
     '<div><b>' + pesados + '</b><span>Pesados</span></div>' +
@@ -525,13 +542,11 @@ function renderParceiro() {
   $('#tela').innerHTML =
     '<div class="cab-parceiro">' +
     '<button class="btn btn-voltar" data-acao="voltar" aria-label="Voltar">' + SETA_VOLTAR + '</button>' +
-    '<div class="nomes"><h1>' + esc(nomeExibicao(p)) + '</h1>' +
-    (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') +
-    '<div class="etiquetas">' +
+    '<div class="nomes"><div class="linha-nome"><h1>' + esc(nomeExibicao(p)) + '</h1>' +
     '<span class="etiqueta">Participação ' + fmtPct(p.participacao_pct) + '</span>' +
-    '<span class="etiqueta">I.E.: ' + textoIE(p.tem_ie) + '</span>' +
-    '<span class="etiqueta">Entrega ' + fmtData(ent.data_entrega) + '</span>' +
-    '</div></div></div>' +
+    '<span class="etiqueta">I.E.: ' + textoIE(p.tem_ie) + '</span></div>' +
+    (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') +
+    '</div></div>' +
     (p.observacoes ? '<div class="obs-fixa">📝 ' + esc(p.observacoes) + '</div>' : '') +
     estadoReg +
     '<div class="form-unica">' +
@@ -557,14 +572,15 @@ function renderParceiro() {
     '<div class="com-unidade"><span class="unidade">R$</span><input id="f-desc" class="entrada" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0,00" value="' + esc(f.desc) + '"></div>' +
     '<div class="erro-campo" id="e-desc"></div>' +
     '<div class="botoes-desc" id="botoes-desc">' +
+    // em telas pequenas some o "R$" e "Máximo" vira "Máx." (classes so-largo / so-estreito)
     '<button class="btn" data-acao="desc-zerar">Zerar</button>' +
-    '<button class="btn" data-acao="desc-somar" data-valor="100">+ R$ 100</button>' +
-    '<button class="btn" data-acao="desc-somar" data-valor="500">+ R$ 500</button>' +
-    '<button class="btn" data-acao="desc-somar" data-valor="1000">+ R$ 1.000</button>' +
-    '<button class="btn btn-desc-max" data-acao="desc-maximo">Máximo</button>' +
-    '<button class="btn" data-acao="desc-somar" data-valor="-100">− R$ 100</button>' +
-    '<button class="btn" data-acao="desc-somar" data-valor="-500">− R$ 500</button>' +
-    '<button class="btn" data-acao="desc-somar" data-valor="-1000">− R$ 1.000</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="100">+<span class="so-largo"> R$</span>100</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="500">+<span class="so-largo"> R$</span>500</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="1000">+<span class="so-largo"> R$</span>1.000</button>' +
+    '<button class="btn btn-desc-max" data-acao="desc-maximo"><span class="so-largo">Máximo</span><span class="so-estreito">Máx.</span></button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="-100">−<span class="so-largo"> R$</span>100</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="-500">−<span class="so-largo"> R$</span>500</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="-1000">−<span class="so-largo"> R$</span>1.000</button>' +
     '</div></div>' +
 
     '<div class="acoes-form">' +
@@ -1236,6 +1252,13 @@ document.addEventListener('click', function (ev) {
   if (!el || el.disabled) return;
   const fn = ACOES[el.dataset.acao];
   if (fn) fn(el);
+});
+
+document.addEventListener('change', function (ev) {
+  if (ev.target.id !== 'sel-data') return;
+  S.data = ev.target.value;
+  salvarEstado().catch(function () {});
+  render();
 });
 
 document.addEventListener('input', function (ev) {

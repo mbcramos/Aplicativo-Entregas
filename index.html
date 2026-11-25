@@ -14,9 +14,10 @@
 <body>
   <header class="topo">
     <div class="topo-titulo">Pesagem</div>
+    <div class="topo-data" id="topo-data" hidden></div>
     <div class="topo-acoes">
       <button class="status-sync" id="status-sync" data-acao="status" data-estado="ok" hidden></button>
-      <button class="btn btn-topo" data-acao="sincronizar" id="btn-sync">⟳ Sincronizar</button>
+      <button class="btn btn-topo" data-acao="sincronizar" id="btn-sync" aria-label="Sincronizar">⟳<span class="txt-sync"> Sincronizar</span></button>
     </div>
     <div class="bolhas">
       <div id="faixa-status" class="bolha" data-acao="fechar-status" hidden></div>
