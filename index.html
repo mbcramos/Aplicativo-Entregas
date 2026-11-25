@@ -38,6 +38,20 @@
       </div>
     </div>
   </div>
+  <div id="modal-mot" class="modal" hidden>
+    <div class="modal-caixa modal-mot">
+      <div class="modal-titulo">Outro motorista</div>
+      <div class="mm-digitar">
+        <input id="mm-nome" class="entrada entrada-nome" type="text" autocomplete="off" autocapitalize="words"
+          enterkeyhint="done" maxlength="40" placeholder="Digite o nome">
+        <button class="btn btn-verde" data-acao="mm-usar">Usar</button>
+      </div>
+      <div id="mm-erro" class="mm-erro"></div>
+      <div id="mm-rotulo" class="mm-rotulo">Ou escolha um motorista já usado:</div>
+      <div id="mm-lista" class="motoristas mm-lista"></div>
+      <button class="btn btn-grande btn-cinza" data-acao="mm-cancelar">Cancelar</button>
+    </div>
+  </div>
   <div id="aviso-rapido" class="aviso-rapido" hidden></div>
 
   <noscript>Este app precisa de JavaScript ativado.</noscript>

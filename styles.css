@@ -332,3 +332,32 @@ button:not(:disabled), .cartao { cursor: pointer; }
 }
 .subgrupo span { font-weight: 600; font-size: .9rem; color: var(--texto-suave); }
 .subgrupo-nao { color: var(--laranja); }
+
+/* ---------- penalidade só com botões ---------- */
+.botoes-rapidos.sem-margem { margin-top: 0; }
+.botoes-rapidos button { min-height: 64px; font-size: 1.25rem; }
+
+/* ---------- desconto: campo sempre visível + botões ---------- */
+.botoes-desc { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.botoes-desc button {
+  min-height: 60px; padding: 0 4px; font-size: 1.05rem; white-space: nowrap;
+  background: #fff; border: 2px solid var(--borda);
+}
+.botoes-desc button:active { background: #eceee8; }
+.botoes-desc [data-acao="desc-zerar"] { color: var(--vermelho); border-color: #e5b3ae; }
+.botoes-desc .btn-desc-max { color: var(--verde); border-color: #9fc7ad; }
+.botoes-desc .btn-desc-max.ativo { background: var(--verde); border-color: var(--verde); color: #fff; }
+@media (max-width: 420px) { .botoes-desc button { font-size: .9rem; } }
+
+/* ---------- janela "Outro motorista" ---------- */
+.modal-mot { display: grid; gap: 12px; max-height: calc(100vh - 32px); overflow-y: auto; }
+.modal-titulo { font-size: 1.35rem; font-weight: 800; }
+.mm-digitar { display: flex; gap: 8px; }
+.mm-digitar .entrada { flex: 1; min-width: 0; }
+.mm-digitar .btn { min-width: 110px; font-size: 1.15rem; }
+.mm-erro { color: var(--vermelho); font-weight: 700; }
+.mm-erro:empty { display: none; }
+.mm-rotulo { font-weight: 700; color: var(--texto-suave); }
+.mm-rotulo[hidden] { display: none; }
+.mm-lista { max-height: 45vh; overflow-y: auto; }
+.mm-vazio { color: var(--texto-suave); padding: 6px 0; }

@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const VERSAO_APP = '1.6.0';
+const VERSAO_APP = '1.7.0';
 const Calc = window.Calc;
 
 /* =========================================================================
@@ -54,6 +54,7 @@ const S = {
   inativacoes: [],     // [{ id_parceiro, em }] ainda não enviadas
   data: null,          // data de entrega selecionada (yyyy-mm-dd)
   ultimoEnvio: null,
+  motoristasHist: [],  // [{ nome, ultima_data }] motoristas já usados (qualquer data)
   // só em memória
   tela: 'lista',
   parceiroId: null,
@@ -71,6 +72,7 @@ async function salvarEstado() {
   try {
     await DB.set('estado', {
       dados: S.dados, lanc: S.lanc, inativacoes: S.inativacoes, data: S.data, ultimoEnvio: S.ultimoEnvio,
+      motoristasHist: S.motoristasHist,
     });
   } catch (e) {
     aviso('ERRO ao salvar no tablet! ' + (e && e.message ? e.message : ''), 8000);
@@ -126,6 +128,21 @@ function semAcento(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 function normalizarNome(s) { return String(s || '').trim().replace(/\s+/g, ' '); }
+
+/** Junta nomes ao histórico de motoristas (guarda a data mais recente de cada um). */
+function registrarMotoristas(lista) {
+  const porChave = {};
+  S.motoristasHist.concat(lista).forEach(function (m) {
+    const nome = normalizarNome(m && m.nome);
+    if (!nome) return;
+    const k = semAcento(nome);
+    const data = String(m.ultima_data || '');
+    if (!porChave[k] || porChave[k].ultima_data < data) porChave[k] = { nome: nome, ultima_data: data };
+  });
+  S.motoristasHist = Object.values(porChave)
+    .sort(function (a, b) { return a.ultima_data < b.ultima_data ? 1 : a.ultima_data > b.ultima_data ? -1 : a.nome.localeCompare(b.nome, 'pt-BR'); })
+    .slice(0, 60);
+}
 
 /** Motoristas já usados na entrega selecionada (sem repetir, em ordem alfabética). */
 function motoristasDoDia() {
@@ -478,10 +495,8 @@ function abrirParceiro(id) {
     desc: r && r.desconto_modo === 'VALOR' ? numParaCampo(r.desconto_informado) : '',
     obs: r ? (r.observacoes || '') : '',
     motorista: r && r.situacao === 'ENTREGOU' ? normalizarNome(r.motorista) : '',
-    motoristaNovo: false,
     alterado: false,
   };
-  if (!motoristasDoDia().length) S.form.motoristaNovo = true; // primeiro do dia: campo de texto direto
   S.tela = 'parceiro';
   history.pushState({ tela: 'parceiro', id: id }, '');
   render();
@@ -527,13 +542,10 @@ function renderParceiro() {
 
     '<div class="campo"><span class="rotulo">Motorista (caminhão)</span>' +
     '<div class="motoristas" id="mot-botoes"></div>' +
-    '<div id="mot-novo" class="mot-novo" hidden>' +
-    '<input id="f-mot" class="entrada entrada-nome" type="text" autocomplete="off" autocapitalize="words" enterkeyhint="done" maxlength="40" placeholder="Nome do motorista" value="' + esc(f.motoristaNovo ? f.motorista : '') + '"></div>' +
     '<div class="erro-campo" id="e-mot"></div></div>' +
 
-    '<div class="campo"><label for="f-pen">Penalidade (0 a ' + Calc.PENALIDADE_MAX + '%)</label>' +
-    '<div class="com-unidade"><input id="f-pen" class="entrada" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" value="' + esc(f.pen) + '"><span class="unidade">%</span></div>' +
-    '<div class="botoes-rapidos" id="pen-rapidos">' +
+    '<div class="campo"><span class="rotulo">Penalidade</span>' +
+    '<div class="botoes-rapidos sem-margem" id="pen-rapidos">' +
     [0, 1, 2, 3, 4].map(function (v) {
       return '<button class="btn" data-acao="pen" data-valor="' + v + '">' + v + '%</button>';
     }).join('') + '</div>' +
@@ -541,15 +553,19 @@ function renderParceiro() {
 
     '<div class="recebe" id="resultado"></div>' +
 
-    '<div class="campo"><span class="rotulo">Desconto em R$</span>' +
-    '<div class="modos" id="modos">' +
-    '<button class="btn" data-acao="modo" data-valor="NENHUM">Sem desconto</button>' +
-    '<button class="btn" data-acao="modo" data-valor="VALOR">Digitar valor</button>' +
-    '<button class="btn" data-acao="modo" data-valor="MAXIMO">Máximo</button>' +
-    '</div>' +
-    '<div class="desconto-valor" id="bloco-desc"' + (f.modo === 'VALOR' ? '' : ' hidden') + '>' +
+    '<div class="campo"><label for="f-desc">Desconto em R$</label>' +
     '<div class="com-unidade"><span class="unidade">R$</span><input id="f-desc" class="entrada" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0,00" value="' + esc(f.desc) + '"></div>' +
-    '<div class="erro-campo" id="e-desc"></div></div></div>' +
+    '<div class="erro-campo" id="e-desc"></div>' +
+    '<div class="botoes-desc" id="botoes-desc">' +
+    '<button class="btn" data-acao="desc-zerar">Zerar</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="100">+ R$ 100</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="500">+ R$ 500</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="1000">+ R$ 1.000</button>' +
+    '<button class="btn btn-desc-max" data-acao="desc-maximo">Máximo</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="-100">− R$ 100</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="-500">− R$ 500</button>' +
+    '<button class="btn" data-acao="desc-somar" data-valor="-1000">− R$ 1.000</button>' +
+    '</div></div>' +
 
     '<div class="acoes-form">' +
     '<button class="btn btn-grande btn-verde" data-acao="salvar">✔ SALVAR</button>' +
@@ -571,12 +587,57 @@ function renderMotoristas() {
   if (!el || !S.form) return;
   const f = S.form;
   const lista = motoristasDoDia();
+  // motorista escolhido na janela "Outro motorista" aparece junto, já marcado
+  if (f.motorista && !lista.some(function (m) { return semAcento(m) === semAcento(f.motorista); })) lista.push(f.motorista);
   el.innerHTML = lista.map(function (m) {
-    const ativo = !f.motoristaNovo && semAcento(m) === semAcento(f.motorista);
+    const ativo = semAcento(m) === semAcento(f.motorista);
     return '<button class="btn' + (ativo ? ' ativo' : '') + '" data-acao="mot" data-valor="' + esc(m) + '">🚚 ' + esc(m) + '</button>';
   }).join('') +
-    (lista.length ? '<button class="btn mot-mais' + (f.motoristaNovo ? ' ativo' : '') + '" data-acao="mot-novo">+ Outro motorista</button>' : '');
-  $('#mot-novo').hidden = !f.motoristaNovo;
+    '<button class="btn mot-mais" data-acao="mot-novo">' + (lista.length ? '+ Outro motorista' : '+ Escolher motorista') + '</button>';
+}
+
+/* ---- janela "Outro motorista": digitar ou escolher um dos já usados (mais recentes primeiro) ---- */
+function abrirModalMot() {
+  const doDia = motoristasDoDia().map(semAcento);
+  S.mmLista = S.motoristasHist
+    .map(function (m) { return m.nome; })
+    .filter(function (n) { return doDia.indexOf(semAcento(n)) < 0; });
+  $('#mm-nome').value = '';
+  $('#mm-erro').textContent = '';
+  renderListaModalMot();
+  $('#modal-mot').hidden = false;
+  history.pushState({ tela: 'parceiro', id: S.parceiroId, modal: 'mot' }, '');
+  if (!S.mmLista.length) setTimeout(function () { $('#mm-nome').focus(); }, 50);
+}
+
+function renderListaModalMot() {
+  const termo = semAcento($('#mm-nome').value.trim());
+  const nomes = (S.mmLista || []).filter(function (n) { return !termo || semAcento(n).indexOf(termo) >= 0; });
+  $('#mm-rotulo').hidden = !(S.mmLista || []).length;
+  $('#mm-lista').innerHTML = nomes.length
+    ? nomes.map(function (n) { return '<button class="btn" data-acao="mm-escolher" data-valor="' + esc(n) + '">🚚 ' + esc(n) + '</button>'; }).join('')
+    : ((S.mmLista || []).length ? '<div class="mm-vazio">Nenhum nome parecido. Toque em “Usar” para o nome digitado.</div>' : '');
+}
+
+function fecharModalMot(nome) {
+  if (nome) {
+    S.form.motorista = nome;
+    S.form.alterado = true;
+    $('#e-mot').textContent = '';
+    renderMotoristas();
+  }
+  $('#modal-mot').hidden = true;
+  $('#mm-nome').blur();
+  if (history.state && history.state.modal === 'mot') history.back();
+}
+
+function usarNomeDigitado() {
+  const nome = normalizarNome($('#mm-nome').value);
+  if (!nome) { $('#mm-erro').textContent = 'Digite o nome do motorista.'; $('#mm-nome').focus(); return; }
+  // mesmo nome com outra grafia: usa o já conhecido
+  const conhecido = motoristasDoDia().concat(S.motoristasHist.map(function (m) { return m.nome; }))
+    .find(function (n) { return semAcento(n) === semAcento(nome); });
+  fecharModalMot(conhecido || nome);
 }
 
 function atualizarBotoesForm() {
@@ -585,11 +646,42 @@ function atualizarBotoesForm() {
   document.querySelectorAll('#pen-rapidos button').forEach(function (b) {
     b.classList.toggle('ativo', penLido.ok && (penLido.valor || 0) === Number(b.dataset.valor));
   });
-  document.querySelectorAll('#modos button').forEach(function (b) {
-    b.classList.toggle('ativo', b.dataset.valor === f.modo);
-  });
-  const bloco = $('#bloco-desc');
-  if (bloco) bloco.hidden = f.modo !== 'VALOR';
+  const bmax = document.querySelector('.btn-desc-max');
+  if (bmax) bmax.classList.toggle('ativo', f.modo === 'MAXIMO');
+}
+
+/** Valor do desconto que está valendo agora (o máximo calculado, ou o digitado). */
+function descontoAtual() {
+  const f = S.form;
+  if (f.modo === 'MAXIMO') {
+    const p = parceiroPorId(S.parceiroId), ent = entregaAtual();
+    return Calc.calcular(lerFormulario().entrada(p, ent)).desconto_maximo || 0;
+  }
+  const d = Calc.lerNumero(f.desc, 2);
+  return d.ok ? (d.valor || 0) : 0;
+}
+
+/** Botões + / − : soma ao valor atual, sem passar do máximo nem ficar abaixo de zero. */
+function somarDesconto(delta) {
+  const p = parceiroPorId(S.parceiroId), ent = entregaAtual();
+  const r = Calc.calcular(Object.assign(lerFormulario().entrada(p, ent), { desconto_modo: 'NENHUM' }));
+  let novo = Calc.arred(Math.max(0, descontoAtual() + delta), 2);
+  if (r.desconto_maximo > 0 && novo > r.desconto_maximo) {
+    novo = r.desconto_maximo;
+    aviso('Limitado ao máximo: ' + fmtR(novo), 2500);
+  }
+  definirDesconto(novo > 0 ? 'VALOR' : 'NENHUM', novo);
+}
+
+function definirDesconto(modo, valor) {
+  const f = S.form;
+  f.modo = modo;
+  f.desc = modo === 'VALOR' && valor > 0 ? numParaCampo(valor) : '';
+  f.alterado = true;
+  const campo = $('#f-desc');
+  if (campo) campo.value = f.desc;
+  atualizarBotoesForm();
+  atualizarResultado();
 }
 
 /** Lê os campos do formulário; devolve valores e erros por campo. */
@@ -597,7 +689,7 @@ function lerFormulario() {
   const f = S.form;
   const peso = Calc.lerNumero(f.peso, 1);
   const pen = Calc.lerNumero(f.pen, 2);
-  const desc = f.modo === 'VALOR' ? Calc.lerNumero(f.desc, 2) : { ok: true, valor: null, vazio: true };
+  const desc = f.modo === 'MAXIMO' ? { ok: true, valor: null, vazio: true } : Calc.lerNumero(f.desc, 2);
   return {
     peso: peso, pen: pen, desc: desc,
     entrada: function (p, ent) {
@@ -608,7 +700,7 @@ function lerFormulario() {
         preco_base: ent.preco_base,
         preco_ajustado: ent.preco_ajustado,
         tem_ie: p.tem_ie,
-        desconto_modo: f.modo,
+        desconto_modo: f.modo === 'MAXIMO' ? 'MAXIMO' : (desc.ok && desc.valor > 0 ? 'VALOR' : 'NENHUM'),
         desconto_informado: desc.ok ? (desc.valor || 0) : 0,
       };
     },
@@ -630,10 +722,14 @@ function atualizarResultado() {
   if (!p || !ent || !el) return;
   const lf = lerFormulario();
   marcarCampo('#f-peso', '#e-peso', lf.peso);
-  marcarCampo('#f-pen', '#e-pen', lf.pen);
-  if (S.form.modo === 'VALOR') marcarCampo('#f-desc', '#e-desc', lf.desc);
+  marcarCampo('#f-desc', '#e-desc', lf.desc);
 
   const r = Calc.calcular(lf.entrada(p, ent));
+  // "Máximo": o campo mostra o valor máximo calculado (acompanha peso e penalidade)
+  if (S.form.modo === 'MAXIMO') {
+    const campo = $('#f-desc');
+    if (campo && document.activeElement !== campo) campo.value = r.desconto_maximo > 0 ? numParaCampo(r.desconto_maximo) : '';
+  }
   let valor = fmtR(0), dica = '', erro = '';
   if (r.erros.length) {
     erro = r.erros.map(function (x) {
@@ -644,8 +740,8 @@ function atualizarResultado() {
     dica = 'Digite o peso para ver o valor';
   } else {
     valor = fmtR(r.valor_parceiro);
-    dica = S.form.modo === 'NENHUM' ? 'Já descontados os impostos (' + fmtPct(Calc.IMPOSTO_PCT) + ')'
-      : 'Já descontados os impostos e o desconto';
+    dica = r.desconto_aplicado > 0 ? 'Já descontados os impostos e o desconto'
+      : 'Já descontados os impostos (' + fmtPct(Calc.IMPOSTO_PCT) + ')';
   }
   el.classList.toggle('com-erro', !!erro);
   el.innerHTML = '<div class="rot">PARCEIRO RECEBE</div><div class="val">' + valor + '</div>' +
@@ -709,21 +805,21 @@ async function salvarEntrega() {
 
   let motorista = normalizarNome(S.form.motorista);
   if (!motorista) {
-    $('#e-mot').textContent = 'Escolha ou digite o motorista.';
+    $('#e-mot').textContent = 'Escolha o motorista.';
     aviso('Escolha o motorista.', 3000);
-    if (S.form.motoristaNovo) $('#f-mot').focus();
     return;
   }
   // Mesmo nome com outra grafia (maiúsculas/acentos) usa o nome já existente
   const existente = motoristasDoDia().find(function (m) { return semAcento(m) === semAcento(motorista); });
   if (existente) motorista = existente;
 
-  let modo = S.form.modo;
+  let modo = 'MAXIMO';
   let informado = 0;
-  if (modo === 'VALOR') {
+  if (S.form.modo !== 'MAXIMO') {
     informado = lf.desc.valor || 0;
-    if (informado === 0) modo = 'NENHUM';
+    modo = informado > 0 ? 'VALOR' : 'NENHUM';
   }
+  registrarMotoristas([{ nome: motorista, ultima_data: ent.data_entrega }]);
   const reg = montarRegistro(p, ent, 'ENTREGOU', r, {
     peso_total_kg: lf.peso.valor,
     penalidade_pct: entrada.penalidade_pct,
@@ -1067,6 +1163,9 @@ function aplicarDownload(d) {
     sincronizado_em: new Date().toISOString(),
   };
   const abertas = new Set(entregas.map(function (e) { return e.data_entrega; }));
+  registrarMotoristas((d.motoristas || []).concat((d.lancamentos || []).map(function (l) {
+    return { nome: l.motorista, ultima_data: l.data_entrega };
+  })));
   // Lançamentos da planilha: só substituem os locais que não têm alteração pendente
   (d.lancamentos || []).forEach(function (rs) {
     const k = chave(rs.data_entrega, rs.id_parceiro);
@@ -1099,24 +1198,20 @@ const ACOES = {
   'filtro': function (el) { S.filtro = el.dataset.valor; renderLista(); },
   'pen': function (el) {
     S.form.pen = el.dataset.valor; S.form.alterado = true;
-    $('#f-pen').value = S.form.pen;
     atualizarBotoesForm(); atualizarResultado();
   },
-  'modo': function (el) {
-    S.form.modo = el.dataset.valor; S.form.alterado = true;
-    atualizarBotoesForm(); atualizarResultado();
-    if (S.form.modo === 'VALOR') $('#f-desc').focus();
-  },
+  'desc-zerar': function () { definirDesconto('NENHUM', 0); },
+  'desc-maximo': function () { definirDesconto('MAXIMO', 0); },
+  'desc-somar': function (el) { somarDesconto(Number(el.dataset.valor)); },
   'mot': function (el) {
-    S.form.motorista = el.dataset.valor; S.form.motoristaNovo = false; S.form.alterado = true;
+    S.form.motorista = el.dataset.valor; S.form.alterado = true;
     $('#e-mot').textContent = '';
     renderMotoristas();
   },
-  'mot-novo': function () {
-    S.form.motoristaNovo = true; S.form.motorista = $('#f-mot').value; S.form.alterado = true;
-    renderMotoristas();
-    $('#f-mot').focus();
-  },
+  'mot-novo': abrirModalMot,
+  'mm-escolher': function (el) { fecharModalMot(el.dataset.valor); },
+  'mm-usar': usarNomeDigitado,
+  'mm-cancelar': function () { fecharModalMot(null); },
   'salvar': salvarEntrega,
   'nao-entregou': marcarNaoEntregou,
   'nao-entregou-fazenda': function (el) { marcarFazendaNaoEntregou(el.dataset.fazenda); },
@@ -1147,16 +1242,22 @@ document.addEventListener('input', function (ev) {
   const id = ev.target.id;
   if (id === 'busca') { S.busca = ev.target.value; renderGradeLista(); return; }
   if (!S.form) return;
-  const mapa = { 'f-peso': 'peso', 'f-pen': 'pen', 'f-desc': 'desc', 'f-obs': 'obs', 'f-mot': 'motorista' };
+  if (id === 'mm-nome') { $('#mm-erro').textContent = ''; renderListaModalMot(); return; }
+  const mapa = { 'f-peso': 'peso', 'f-desc': 'desc', 'f-obs': 'obs' };
   if (!mapa[id]) return;
   S.form[mapa[id]] = ev.target.value;
   S.form.alterado = true;
-  if (id === 'f-mot') { $('#e-mot').textContent = ''; return; }
+  if (id === 'f-desc') {
+    // digitar no campo troca para "valor digitado" (ou sem desconto, se vazio/zero)
+    const d = Calc.lerNumero(ev.target.value, 2);
+    S.form.modo = d.ok && !(d.valor > 0) ? 'NENHUM' : 'VALOR';
+  }
   if (id !== 'f-obs') { atualizarBotoesForm(); atualizarResultado(); }
 });
 
 // "Enter" no teclado numérico fecha o teclado para mostrar o resultado
 document.addEventListener('keydown', function (ev) {
+  if (ev.key === 'Enter' && ev.target.id === 'mm-nome') { ev.preventDefault(); usarNomeDigitado(); return; }
   if (ev.key === 'Enter' && ev.target.matches && ev.target.matches('input.entrada')) {
     ev.preventDefault();
     ev.target.blur();
@@ -1167,6 +1268,9 @@ document.addEventListener('keydown', function (ev) {
 window.addEventListener('popstate', async function (ev) {
   const st = ev.state || { tela: 'lista' };
   if (!$('#modal').hidden) { $('#modal-nao').click(); }
+  if (!$('#modal-mot').hidden) $('#modal-mot').hidden = true; // "voltar" fecha a janela do motorista
+  // continua na mesma tela do parceiro (ex.: janela do motorista fechada): nada a redesenhar
+  if (S.tela === 'parceiro' && st.tela === 'parceiro' && st.id === S.parceiroId && S.form) return;
   if (S.tela === 'parceiro' && S.form && S.form.alterado && st.tela !== 'parceiro') {
     history.pushState({ tela: 'parceiro', id: S.parceiroId }, '');
     const sair = await confirmar('Sair sem salvar?\n\nO que foi digitado será perdido.',
@@ -1237,6 +1341,7 @@ async function iniciar() {
       S.inativacoes = e.inativacoes || [];
       S.data = e.data || null;
       S.ultimoEnvio = e.ultimoEnvio || null;
+      S.motoristasHist = e.motoristasHist || [];
     }
   } catch (err) {
     aviso('Não foi possível ler os dados do tablet: ' + (err && err.message ? err.message : err), 10000);
